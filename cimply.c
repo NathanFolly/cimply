@@ -28,6 +28,13 @@ typedef struct {
   PetscBool neumann;
 }AppCtx;
 
+typedef struct LFctx  /* The Leapfrog timestepping context */
+{
+  PetscReal total;  /* total time in seconds */
+  PetscReal dt;     /* time setp size */
+  
+};
+
 
 /* The Kronecker Delta */
 static const PetscInt delta2D[2*2] = {1,0,0,1};
@@ -135,7 +142,7 @@ void f0_u(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], cons
 {
   const PetscInt Ncomp = dim;
   PetscInt comp;
-  for(comp=0;comp<Ncomp;comp++) f0[comp]=0.0;
+  for(comp=0;comp<Ncomp;comp++) f0[comp]=a[comp];
   
 }
 
@@ -144,9 +151,7 @@ void f1_u_2d_testytesty(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscIn
   const PetscInt Ncomp = dim;
   const PetscReal mu = 86, lbda=115.4;
   
-  /* This is a copy of the resdiual function in the original petsc ex77.c I
-     made some changes to learn how the concept works. 
-     In this case f1 is the cauchy stress tensor*/
+  /* f1 is the cauchy stress tensor*/
   
   /*u_x = deformation gradient*/
   /* Hence is the strain epsilon_ij=0.5(u_i,j+u_j,i) => epsilon[comp*dim+d]=0.5(u_x[comp*dim+d]+u_x[d*dim+comp]) */
@@ -395,6 +400,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
 }
 
 
+
 int main(int argc, char **argv){
 
   SNES snes;			/* nonlinear solver */
@@ -405,11 +411,23 @@ int main(int argc, char **argv){
   PetscInt its;			/* interation integer */
   PetscErrorCode ierr;
   PetscViewer viewer;
+  LFctx timestepping;
+  Vec v,vtprior,a;              /* The velocity and acceleration vector */
+  Vec uprior;                   /* The solution from the last timestep */
+  Vec inertia;                  /* The inertia vector */
+  PetscReal t;
+  PetscBool halfstep;
+  PetscReal density=7850;  /* density. we need it for the inertia */
   
   /* Firing up Petsc */
   ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr);
 
   ierr = ProcessOptions(PETSC_COMM_WORLD,&user);CHKERRQ(ierr);
+
+  /* Defining the timestepping context */
+  timestepping->total = 5.0;
+  timestepping->dt = 0.01;
+  
   ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
   /* ierr = CreateMesh(PETSC_COMM_WORLD,&user,&dm);CHKERRQ(ierr); */
 
@@ -453,9 +471,43 @@ int main(int argc, char **argv){
     ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr);
     ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
   }
-  ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);
-  ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
-  ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr);
+
+
+  /*--------------------------------- We will introduce our own leapfrog timestepping -----------------------------*/
+
+  /* Creating the velocity and acceleration field vector */
+  ierr = DMCreateLocalVector(dm,&v);CHKERRQ(ierr);
+  ierr = DMCreateLocalVector(dm,&vtprior);CHKERRQ(ierr);
+  ierr = DMCreateLocalVector(dm,&uprior);CHKERRQ(ierr);
+  ierr = DMCreateLocalVector(dm,&a);CHKERRQ(ierr);
+
+
+  for (t=0; t<timestepping->total; t+timestepping->dt/2){
+    halfstep = !halfstep;
+    
+    if (halfstep){
+      vtprior = v;
+      v = u;
+      VecAXPBY(v,timestepping->dt,-1*timestepping->dt,uprior);  /* updating the velocity at the current halfstep */
+    }
+    else {
+      uprior = u;
+      a = v;
+      VecAXPBY(a,timestepping->dt;-1*timestepping->dt,vtprior);  /* Updating the acceleration at the current timestep */
+      /* Updating the auxiliary field (inertia) */
+      ierr = DMCreateLocalVector(dm,&inertia);CHKERRQ(ierr);
+      ierr = VecAXPBY(inertia,0.0,density,a);CHKERRQ(ierr);
+      ierr = PetscObjectCompose((PetscObject) dm, "A", (PetscObject) inertia);
+      ierr = VecDestroy(&inertia);
+      ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);
+
+    }
+
+    /* -----------------------------------------End of timestepping --------------------------------------------- */
+  
+  /* ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr); */
+  /* ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr); */
+  /* ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr); */
   if (user.showSolution){
     ierr = PetscPrintf(PETSC_COMM_WORLD,"solution: \n");CHKERRQ(ierr);
     ierr = VecChop(u, 3.0e-9); CHKERRQ(ierr); /* what does vecchop do? */
