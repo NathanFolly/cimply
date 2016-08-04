@@ -5,11 +5,21 @@ static char help[] = "basic, linear elasticity problem solved with a nonlinear s
 #include <petscdmplex.h>
 #include <petscds.h>
 #include <petscsnes.h>
+#include <petscts.h>
 
 /* We will create a user defined Application Context that helps to manage the options (or the contetext) of the program  */
 
 typedef enum {RUN_FULL, RUN_TEST} RunType;
 typedef enum {NONE, LABELS, BOUNDARIES, SOLUTION} Visualization;
+
+typedef struct  /* The Leapfrog timestepping context */
+{
+  PetscReal total;  /* total time in seconds */
+  PetscReal dt;     /* time setp size */
+  PetscBool halfstep;  /* Is the timestep a halfstep? */
+} TSctx;
+
+
 
 typedef struct {
   PetscInt debug;
@@ -26,14 +36,9 @@ typedef struct {
   PetscBool verbose;
   Visualization visualization;
   PetscBool neumann;
+  PetscBool transient;
+  TSctx time;
 }AppCtx;
-
-typedef struct LFctx  /* The Leapfrog timestepping context */
-{
-  PetscReal total;  /* total time in seconds */
-  PetscReal dt;     /* time setp size */
-  
-};
 
 
 /* The Kronecker Delta */
@@ -141,9 +146,17 @@ PetscErrorCode pull(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt 
 void f0_u(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f0[])
 {
   const PetscInt Ncomp = dim;
+  const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
   PetscInt comp;
-  for(comp=0;comp<Ncomp;comp++) f0[comp]=a[comp];
-  
+  for(comp=0;comp<Ncomp;comp++) f0[comp]=0;
+    
+}
+void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f0[])
+{
+  const PetscInt Ncomp = dim;
+  const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
+  PetscInt comp;
+  for(comp=0;comp<Ncomp;comp++) f0[comp]=rho*u_t[Ncomp+comp];
 }
 
 void f1_u_2d_testytesty(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
@@ -251,6 +264,54 @@ void g1_uu_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 }
 
 
+void f0_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+               const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+               const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+               const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+               const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f0[])
+{
+  const PetscInt Ncomp = dim;
+  PetscInt comp;
+  /* We're solving the equation vel - du/dt = 0 so: */
+
+  for (comp=0;comp<Ncomp;comp++){
+    f0[comp] = u[Ncomp+comp]-u_t[comp]; 
+  }
+  
+}
+
+
+void f1_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+               const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+               const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+               const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+               const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
+{
+  const PetscInt Ncomp = dim;
+  PetscInt comp,d;
+
+  for (comp=0;comp<Ncomp;comp++){
+    for (d=0;d<dim;d++){
+      f1[d*comp+d] = 0;
+    }
+  }
+}
+
+void g0_velvel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                  const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+                  const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+                  const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+                  const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+                  PetscScalar g0[]){
+  PetscInt Ncomp = dim;
+  PetscInt i;
+
+  for (i=0;i<Ncomp;i++){
+    g0[i]= 1.0;
+  }
+  
+}
+
 PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
 {
   const char *runTypes[2]={"full","test"};
@@ -271,26 +332,31 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->verbose = PETSC_FALSE;
   options->visualization = NONE;
   options->neumann = PETSC_FALSE;
+  options->transient = PETSC_FALSE;
+  options->time.total = 3.0;
+  options->time.dt = 0.1;
+  
 
   ierr = PetscOptionsBegin(comm,"", "Linear elasticity problem options", "DMPLEX"); CHKERRQ(ierr);
-  ierr = PetscOptionsInt("-debug","The debugging level","cimpleFEM.c",options->debug, &options->debug,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsInt("-debug","The debugging level","cimply.c",options->debug, &options->debug,NULL);CHKERRQ(ierr);
   run = options->runType;
-  ierr = PetscOptionsEList("-run-type","The run type","cimpleFEM.c",runTypes,2,runTypes[options->runType],&run,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsEList("-run-type","The run type","cimply.c",runTypes,2,runTypes[options->runType],&run,NULL);CHKERRQ(ierr);
   
   options->runType = (RunType) run;
 
-  ierr = PetscOptionsInt("-dim","The topological mesh dimension", "cimpleFEM.c",options->dim,&options->dim,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-interpolate","Generate intermediate mesh elements", "cimpleFEM.c",options->interpolate,&options->interpolate,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-simplex","use simplex or tensor product cells","cimpleFEM.c",options->simplex,&options->simplex,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsReal("-refinementLimit","Largest allowable cell volume", "cimpleFEM.c",options->refinementLimit,&options->refinementLimit,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-test_partition","Use a fixed partition for testing", "cimpleFEM.c", options->testPartition,&options->testPartition,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsReal("-shear_modulus","The shear modulus","cimpleFEM.c",options->mu,&options->mu,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-show_initial","Output the initial guess for verification","cimpleFEM.c",options->showInitial,&options->showInitial,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-show_solution","Output the solution for verification","cimpleFEM.c",options->showSolution,&options->showSolution,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-verbose","Output additional information.","cimpleFEM.c",options->verbose,&options->verbose,NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsEList("-visualize","Visualize a certain object for debugging and learning purposes","cimpleFEM",visutype,4,visutype[options->visualization],&vis,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsInt("-dim","The topological mesh dimension", "cimply.c",options->dim,&options->dim,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-interpolate","Generate intermediate mesh elements", "cimply.c",options->interpolate,&options->interpolate,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-simplex","use simplex or tensor product cells","cimply.c",options->simplex,&options->simplex,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsReal("-refinementLimit","Largest allowable cell volume", "cimply.c",options->refinementLimit,&options->refinementLimit,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-test_partition","Use a fixed partition for testing", "cimply.c", options->testPartition,&options->testPartition,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsReal("-shear_modulus","The shear modulus","cimply.c",options->mu,&options->mu,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-show_initial","Output the initial guess for verification","cimply.c",options->showInitial,&options->showInitial,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-show_solution","Output the solution for verification","cimply.c",options->showSolution,&options->showSolution,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-verbose","Output additional information.","cimply.c",options->verbose,&options->verbose,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsEList("-visualize","Visualize a certain object for debugging and learning purposes","cimply",visutype,4,visutype[options->visualization],&vis,NULL);CHKERRQ(ierr);
   options->visualization = (Visualization) vis;
-  ierr = PetscOptionsBool("-neumann", "Apply Neumann boundary conditions on the rightmost face.","cimpleFEM.c",options->neumann, &options->neumann,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-neumann", "Apply Neumann boundary conditions on the rightmost face.","cimply.c",options->neumann, &options->neumann,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-transient", "Conduct a transient analysis. Default false.","cimply.c", options->transient, &options->transient,NULL);CHKERRQ(ierr);
   ierr = PetscOptionsEnd(); CHKERRQ(ierr);
   return(0);
     }
@@ -329,8 +395,18 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
   /* PetscFunctionBeginUser; */
   ierr = DMGetDS(dm, &prob);CHKERRQ(ierr);
   /* Setting up the linear elasticity problem */
-  ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d_testytesty);CHKERRQ(ierr);
+  if (user->transient){
+    ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u_2d_testytesty);CHKERRQ(ierr);
+  }
+  else{
+    ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d_testytesty);CHKERRQ(ierr);
+  }
   ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
+  /* setting up the velocity field for the transient analysis */
+  if(user->transient){
+    ierr = PetscDSSetResidual(prob,1,f0_vel_2d,f1_vel_2d);CHKERRQ(ierr);
+    ierr = PetscDSSetJacobian(prob,1,1,g0_velvel_2d,NULL,NULL,NULL);CHKERRQ(ierr);
+  }
   /* Setting the Neumann Boudnary Condition */
   if (user->neumann){
     ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_2d,f1_u_bd_2d);CHKERRQ(ierr);
@@ -348,7 +424,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   DM cdm = dm;
   const PetscInt dim = user->dim; 	/* need to adapt this when changing
 				   the dimensions of hte code */
-  PetscFE fe, fe_bd;
+  PetscFE fe, fe_bd, fe_vel;
   PetscDS prob;
   PetscErrorCode ierr;
   PetscBool simplex = user->simplex;
@@ -365,10 +441,20 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     ierr = PetscFECreateDefault(dm,dim-1, dim, simplex, "bd_def_",order,&fe_bd);CHKERRQ(ierr);
     ierr = PetscObjectSetName((PetscObject) fe_bd, "deformation");CHKERRQ(ierr);
   }
+  if(user->transient){
+    ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
+    ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr);
+    /* Creating the FE field for the velocity */
+    ierr = PetscFECreateDefault(dm,dim,dim,simplex,"vel_",order,&fe_vel);CHKERRQ(ierr);
+    ierr = PetscObjectSetName((PetscObject) fe_vel, "velocity");CHKERRQ(ierr);
+  }
   /* Discretization and boundary conditons: */
   while (cdm)  {
     ierr = DMGetDS(cdm, &prob);CHKERRQ(ierr);
     ierr = PetscDSSetDiscretization(prob, 0, (PetscObject) fe); CHKERRQ(ierr);
+    if (user->transient){
+      ierr = PetscDSSetDiscretization(prob,1, (PetscObject) fe_vel);CHKERRQ(ierr);
+    }
     if (user->neumann){
       ierr = PetscDSSetBdDiscretization(prob, 0, (PetscObject) fe_bd); CHKERRQ(ierr);
     }
@@ -408,27 +494,20 @@ int main(int argc, char **argv){
   Vec u,r;			/* solution and residual vectors */
   Mat A,J;			/* Jacobian Matrix */
   AppCtx user;			/* user-defined work context */
-  PetscInt its;			/* interation integer */
   PetscErrorCode ierr;
   PetscViewer viewer;
-  LFctx timestepping;
-  Vec v,vtprior,a;              /* The velocity and acceleration vector */
-  Vec uprior;                   /* The solution from the last timestep */
-  Vec inertia;                  /* The inertia vector */
-  PetscReal t;
-  PetscBool halfstep;
-  PetscReal density=7850;  /* density. we need it for the inertia */
+  TS ts;
+
+
+
+
   
   /* Firing up Petsc */
   ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr);
 
   ierr = ProcessOptions(PETSC_COMM_WORLD,&user);CHKERRQ(ierr);
 
-  /* Defining the timestepping context */
-  timestepping->total = 5.0;
-  timestepping->dt = 0.01;
-  
-  ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
+
   /* ierr = CreateMesh(PETSC_COMM_WORLD,&user,&dm);CHKERRQ(ierr); */
 
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
@@ -441,99 +520,121 @@ int main(int argc, char **argv){
   
   ierr = DMSetFromOptions(dm);CHKERRQ(ierr);
   
-  ierr = SNESSetDM(snes,dm);CHKERRQ(ierr);
-  ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
-  ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
-  ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
-
-  ierr = DMCreateGlobalVector(dm,&u);CHKERRQ(ierr);
-  ierr = VecDuplicate(u,&r);CHKERRQ(ierr);
-
-  ierr = VecSet(u,(PetscReal) 1.0);CHKERRQ(ierr);
+ 
 
 
-  ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
-  ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
-  A=J;
-  
-  ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
-  if (user.debug){  		/* Showing the Jacobi matrix for debugging purposes */
-    ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr);
-    ierr = MatView(A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-  }
-  ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
-  
-  ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
+  if (user.transient){
+    PetscReal ftime;
+    PetscInt nsteps;
+    TSConvergedReason ConvergedReason;
 
-  if (user.showInitial){ ierr = DMVecViewLocal(dm, u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr);}
-  
-  if (user.debug) {
-    ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr);
-    ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-  }
-
-
-  /*--------------------------------- We will introduce our own leapfrog timestepping -----------------------------*/
-
-  /* Creating the velocity and acceleration field vector */
-  ierr = DMCreateLocalVector(dm,&v);CHKERRQ(ierr);
-  ierr = DMCreateLocalVector(dm,&vtprior);CHKERRQ(ierr);
-  ierr = DMCreateLocalVector(dm,&uprior);CHKERRQ(ierr);
-  ierr = DMCreateLocalVector(dm,&a);CHKERRQ(ierr);
-
-
-  for (t=0; t<timestepping->total; t+timestepping->dt/2){
-    halfstep = !halfstep;
+    PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",user.time.total);
+    ierr =  TSCreate(PETSC_COMM_WORLD, &ts); CHKERRQ(ierr);
+    ierr = TSSetDM(ts,dm);CHKERRQ(ierr);
     
-    if (halfstep){
-      vtprior = v;
-      v = u;
-      VecAXPBY(v,timestepping->dt,-1*timestepping->dt,uprior);  /* updating the velocity at the current halfstep */
-    }
-    else {
-      uprior = u;
-      a = v;
-      VecAXPBY(a,timestepping->dt;-1*timestepping->dt,vtprior);  /* Updating the acceleration at the current timestep */
-      /* Updating the auxiliary field (inertia) */
-      ierr = DMCreateLocalVector(dm,&inertia);CHKERRQ(ierr);
-      ierr = VecAXPBY(inertia,0.0,density,a);CHKERRQ(ierr);
-      ierr = PetscObjectCompose((PetscObject) dm, "A", (PetscObject) inertia);
-      ierr = VecDestroy(&inertia);
-      ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);
+    ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
+    ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
+    ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
+    
+    ierr = DMCreateGlobalVector(dm, &u); CHKERRQ(ierr);
+    ierr = PetscObjectSetName( (PetscObject) u, "deformation"); CHKERRQ(ierr);
+    ierr = VecSet(u, (PetscReal) 0.0); CHKERRQ(ierr);
+    ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
+    
 
-    }
+    ierr = TSSetProblemType(ts,TS_NONLINEAR); CHKERRQ(ierr);
+    ierr = TSSetType(ts, TSRK); CHKERRQ(ierr);
+    ierr = TSSetDM(ts,dm); CHKERRQ(ierr);
+    ierr = DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, &user); CHKERRQ(ierr);
+    ierr = DMTSSetIFunctionLocal(dm, DMPlexTSComputeIFunctionFEM, &user); CHKERRQ(ierr);
+    ierr = DMTSSetIJacobianLocal(dm, DMPlexTSComputeIJacobianFEM, &user); CHKERRQ(ierr);
 
-    /* -----------------------------------------End of timestepping --------------------------------------------- */
+
+    ierr = TSSetDuration(ts,1000,user.time.total); CHKERRQ(ierr);
+    ierr = TSSetExactFinalTime(ts, user.time.total); CHKERRQ(ierr);
+    ierr = TSSetInitialTimeStep(ts,0.0, user.time.dt); CHKERRQ(ierr);
+    ierr = TSSetFromOptions(ts); CHKERRQ(ierr);
+
+    ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
+    ierr = TSSetUp(ts);CHKERRQ(ierr);
+    ierr = TSStep(ts, &nsteps, &ftime); CHKERRQ(ierr);
+    /* ierr = TSSolve(ts,u); CHKERRQ(ierr); */
+
+    /* ierr = TSGetSolveTime(ts,&ftime); */
+    /* ierr = TSGetTimeStepNumber(ts,&nsteps); CHKERRQ(ierr); */
+    /* ierr = TSGetConvergedReason(ts,&ConvergedReason); CHKERRQ(ierr); */
+
+    ierr = TSView(ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr);
+    PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
+    /* ierr = PetscPrintf(PETSC_COMM_WORLD, "%s at time %g after %D steps \n",ConvergedReason,ftime,nsteps); CHKERRQ(ierr); */
+
+    ierr = TSDestroy(&ts); CHKERRQ(ierr);
+    ierr = VecDestroy(&u); CHKERRQ(ierr);
+    
+  }  
+  else{
+    PetscInt its;  /* number of iterations needed by the SNES solver */
+    ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
+    ierr = SNESSetDM(snes,dm);CHKERRQ(ierr);
+    ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
+    ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
+    ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
+    
+    ierr = DMCreateGlobalVector(dm,&u);CHKERRQ(ierr);
+    ierr = VecDuplicate(u,&r);CHKERRQ(ierr);
+    
+    ierr = VecSet(u,(PetscReal) 1.0);CHKERRQ(ierr);
+    
+    
+    ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
+    ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
+    A=J;
+    
+    ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
+    if (user.debug){  		/* Showing the Jacobi matrix for debugging purposes */
+      ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr);
+      ierr = MatView(A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+    }
+    ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
+    
+    ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
+    
+    if (user.showInitial){ ierr = DMVecViewLocal(dm, u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr);}
+    
+    if (user.debug) {
+      ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr);
+      ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+    }
+    ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);
+    ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
+    ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr);
   
-  /* ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr); */
-  /* ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr); */
-  /* ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr); */
-  if (user.showSolution){
-    ierr = PetscPrintf(PETSC_COMM_WORLD,"solution: \n");CHKERRQ(ierr);
-    ierr = VecChop(u, 3.0e-9); CHKERRQ(ierr); /* what does vecchop do? */
-    ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-  }
-
-  if (user.visualization ==SOLUTION){
+    if (user.showSolution){
+      ierr = PetscPrintf(PETSC_COMM_WORLD,"solution: \n");CHKERRQ(ierr);
+      ierr = VecChop(u, 3.0e-9); CHKERRQ(ierr); /* what does vecchop do? */
+      ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+    }
+    
+    if (user.visualization ==SOLUTION){
         
-    if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Creating the vtk output file... \n");
-    ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
-    ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr);
-    ierr = VecView(u,viewer);CHKERRQ(ierr);
-    ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
-    if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
+      if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Creating the vtk output file... \n");
+      ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
+      ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr);
+      ierr = VecView(u,viewer);CHKERRQ(ierr);
+      ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
+      if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
+    }
+
+    ierr = VecViewFromOptions(u,NULL,"-sol_vec_view");CHKERRQ(ierr);
+
+    if ( A != J){MatDestroy(&A);}
+    MatDestroy(&J);
+    VecDestroy(&u);
+    VecDestroy(&r);
+    SNESDestroy(&snes);
   }
-
-  ierr = VecViewFromOptions(u,NULL,"-sol_vec_view");CHKERRQ(ierr);
-
-  if ( A != J){MatDestroy(&A);}
-  MatDestroy(&J);
-  VecDestroy(&u);
-  VecDestroy(&r);
-  SNESDestroy(&snes);
   DMDestroy(&dm);
   PetscFinalize();
-
   return 0;
   
 }
