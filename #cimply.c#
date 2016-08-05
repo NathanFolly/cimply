@@ -543,7 +543,7 @@ int main(int argc, char **argv){
 
     ierr = TSSetProblemType(ts,TS_NONLINEAR); CHKERRQ(ierr);
     ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
-    ierr = TSSetType(ts, TSCN); CHKERRQ(ierr);
+    ierr = TSSetType(ts, TSCN0); CHKERRQ(ierr);
     ierr = TSSetDM(ts,dm); CHKERRQ(ierr);
     ierr = DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, &user); CHKERRQ(ierr);
     ierr = DMTSSetIFunctionLocal(dm, DMPlexTSComputeIFunctionFEM, &user); CHKERRQ(ierr);
