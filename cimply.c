@@ -1,3 +1,4 @@
+
 static char help[] = "basic, linear elasticity problem solved with a nonlinear sovler. This version provides the possibility to impose natural (Neumann) boundary conditions.";
 
 
@@ -155,8 +156,10 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
 {
   const PetscInt Ncomp = dim;
   const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
+  PetscReal b,c;               /* exist temporarily for the sake of debugging */
   PetscInt comp;
-  for(comp=0;comp<Ncomp;comp++) f0[comp]=rho*u_t[Ncomp+comp];
+  for(comp=0;comp<Ncomp;comp++) f0[comp]= 0.0;/* -rho*u_t[Ncomp+comp]; */
+  /* b = u_t[0]; */
 }
 
 void f1_u_2d_testytesty(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
@@ -272,12 +275,13 @@ void f0_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 {
   const PetscInt Ncomp = dim;
   PetscInt comp;
+  PetscReal b;
   /* We're solving the equation vel - du/dt = 0 so: */
 
   for (comp=0;comp<Ncomp;comp++){
-    f0[comp] = u[Ncomp+comp]-u_t[comp]; 
+    f0[comp] = u[Ncomp+comp]-u_t[comp];
   }
-  
+  /* b=u_t[Ncomp]; */
 }
 
 
@@ -292,7 +296,7 @@ void f1_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (comp=0;comp<Ncomp;comp++){
     for (d=0;d<dim;d++){
-      f1[d*comp+d] = 0;
+      f1[d*comp+d] = 0.0;
     }
   }
 }
@@ -310,6 +314,20 @@ void g0_velvel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
     g0[i]= 1.0;
   }
   
+}
+
+void g0_dyn_velu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                    const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+                    const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+                    const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+                    const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar g0[]){
+
+  PetscInt Ncomp = dim;
+  PetscInt i;
+
+  for (i=0;i<Ncomp;i++){
+    g0[i]=1.0;
+  }
 }
 
 PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
@@ -388,6 +406,7 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
 {
   PetscDS prob; 		   /* a DS is a "discrete system" managing discretisations */
   PetscErrorCode ierr;
+  PetscInt NumFields;
 
   /* for the beginning, we set up this problem with a single field of two
      components: displacement in x direction and displacement in y direction */
@@ -406,6 +425,7 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
   if(user->transient){
     ierr = PetscDSSetResidual(prob,1,f0_vel_2d,f1_vel_2d);CHKERRQ(ierr);
     ierr = PetscDSSetJacobian(prob,1,1,g0_velvel_2d,NULL,NULL,NULL);CHKERRQ(ierr);
+    ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_dyn_velu_2d,NULL,NULL,NULL);CHKERRQ(ierr);
   }
   /* Setting the Neumann Boudnary Condition */
   if (user->neumann){
@@ -414,7 +434,8 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
 
   }
   
-
+  ierr = PetscDSGetNumFields(prob,&NumFields);CHKERRQ(ierr);
+  ierr = PetscPrintf(PETSC_COMM_WORLD,"Problem set up with %i fields\n",NumFields);CHKERRQ(ierr);
       
   return(0);
 }
@@ -447,6 +468,11 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     /* Creating the FE field for the velocity */
     ierr = PetscFECreateDefault(dm,dim,dim,simplex,"vel_",order,&fe_vel);CHKERRQ(ierr);
     ierr = PetscObjectSetName((PetscObject) fe_vel, "velocity");CHKERRQ(ierr);
+    /* if (user->neumann){ */
+    /*   /\* Creating the boundary FE field for the velocity in case of neuman boundary conditions *\/ */
+    /*   ierr = PetscFECreateDefault(dm,dim,dim-1,simplex, "bd_vel_",order,&fe_vel_bd);CHKERRQ(ierr); */
+    /*   ierr = PetscObjectSetName((PetscObject) fe_vel_bd, "velocity");CHKERRQ(ierr); */
+    /* } */
   }
   /* Discretization and boundary conditons: */
   while (cdm)  {
@@ -475,13 +501,16 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     else{
       ierr = DMAddBoundary(cdm, PETSC_TRUE, "load", "Face Sets", 0, Ncomp, components, (void(*)()) pull, Npid, pid, user);CHKERRQ(ierr);
     }
-        
-      ierr = DMGetCoarseDM(cdm, &cdm); CHKERRQ(ierr);
+    /* if(user->transient){  /\* zero velocity boundary condition at the fixed face *\/ */
+    /*   ierr = DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",1, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr); */
+    /* }     */
+    ierr = DMGetCoarseDM(cdm, &cdm); CHKERRQ(ierr);
   }
 
 
   ierr = PetscFEDestroy(&fe); CHKERRQ(ierr);
   if (user->neumann)  ierr = PetscFEDestroy(&fe_bd); CHKERRQ(ierr);
+  if (user->transient) ierr = PetscFEDestroy(&fe_vel); CHKERRQ(ierr);
   return(0);
 }
 
@@ -524,38 +553,86 @@ int main(int argc, char **argv){
 
 
   if (user.transient){
+    Vec u_start;
     PetscReal ftime;
-    PetscInt nsteps;
+    PetscInt nsteps, its;
     TSConvergedReason ConvergedReason;
+    PetscBool snap = PETSC_TRUE;
+    
+    if (snap){  /* routine not yet finished */
+      user.transient=PETSC_FALSE;
+      ierr = PetscPrintf(PETSC_COMM_WORLD,"Creating initial solution for loaded cantilever\n");CHKERRQ(ierr);
+      ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
+      ierr = SNESSetDM(snes,dm);CHKERRQ(ierr);
+      ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
+      ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
+      ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
+      
+      ierr = DMCreateGlobalVector(dm,&u_start);CHKERRQ(ierr);
+      ierr = VecDuplicate(u_start,&r);CHKERRQ(ierr);
+      
+      
+      ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
+      ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
+      A=J;
 
+      
+      ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
+
+      ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
+
+      ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
+      ierr = SNESSolve(snes,NULL,u_start);CHKERRQ(ierr);
+
+      ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
+      ierr = PetscPrintf(PETSC_COMM_WORLD,"Static loaded state determined. Number of snes iterations %i \n", its);CHKERRQ(ierr);
+
+      ierr = MatDestroy(&J); CHKERRQ(ierr);
+      ierr = MatDestroy(&A); CHKERRQ(ierr);
+      ierr = VecDestroy(&r); CHKERRQ(ierr);
+      /* ierr = SNESDestroy(&snes); CHKERRQ(ierr); */
+
+      user.transient=PETSC_TRUE;
+      user.neumann = PETSC_FALSE;
+
+    }
+    
+    
     PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",user.time.total);
     ierr =  TSCreate(PETSC_COMM_WORLD, &ts); CHKERRQ(ierr);
-      
+    ierr = TSSetType(ts, TSCN); CHKERRQ(ierr);
+    ierr = TSSetDM(ts,dm); CHKERRQ(ierr);  
     ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
     ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
     ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
-    
-    ierr = DMCreateGlobalVector(dm, &u); CHKERRQ(ierr);
-    ierr = PetscObjectSetName( (PetscObject) u, "deformation"); CHKERRQ(ierr);
-    ierr = VecSet(u, (PetscReal) 0.0); CHKERRQ(ierr);
-    ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
-    
 
-    ierr = TSSetProblemType(ts,TS_NONLINEAR); CHKERRQ(ierr);
-    ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
-    ierr = TSSetType(ts, TSCN); CHKERRQ(ierr);
-    ierr = TSSetDM(ts,dm); CHKERRQ(ierr);
     ierr = DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, &user); CHKERRQ(ierr);
     ierr = DMTSSetIFunctionLocal(dm, DMPlexTSComputeIFunctionFEM, &user); CHKERRQ(ierr);
     ierr = DMTSSetIJacobianLocal(dm, DMPlexTSComputeIJacobianFEM, &user); CHKERRQ(ierr);
 
+
+    
+    ierr = DMCreateGlobalVector(dm, &u); CHKERRQ(ierr);
+    /* ierr = PetscObjectSetName( (PetscObject) u, "deformation"); CHKERRQ(ierr); */
+
+    if (snap){
+      /* sretting the loaded cantilever static solution as initial condition for the transient analysis */
+      u=u_start;
+    }
+    
+    /* ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr); */
+    
+
+    /* ierr = TSSetProblemType(ts,TS_NONLINEAR); CHKERRQ(ierr);  */
+    ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
+    
 
     ierr = TSSetDuration(ts,1000,user.time.total); CHKERRQ(ierr);
     ierr = TSSetExactFinalTime(ts, user.time.total); CHKERRQ(ierr);
     ierr = TSSetInitialTimeStep(ts,0.0, user.time.dt); CHKERRQ(ierr);
     ierr = TSSetFromOptions(ts); CHKERRQ(ierr);
 
-    ierr = TSSetUp(ts);CHKERRQ(ierr);
+    /* ierr = TSSetUp(ts);CHKERRQ(ierr); */
     /* ierr = TSStep(ts); CHKERRQ(ierr); */
     ierr = TSSolve(ts,NULL); CHKERRQ(ierr);
 
@@ -566,6 +643,9 @@ int main(int argc, char **argv){
     ierr = TSView(ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr);
     PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
     /* ierr = PetscPrintf(PETSC_COMM_WORLD, "%s at time %g after %D steps \n",ConvergedReason,ftime,nsteps); CHKERRQ(ierr); */
+    ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
+    ierr = DMPlexVTKWriteAll((PetscObject) dm, viewer);
+    ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
 
     ierr = TSDestroy(&ts); CHKERRQ(ierr);
     ierr = VecDestroy(&u); CHKERRQ(ierr);
