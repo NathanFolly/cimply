@@ -38,6 +38,7 @@ typedef struct {
   Visualization visualization;
   PetscBool neumann;
   PetscBool transient;
+  PetscBool ldis;  /* for large displacement */
   TSctx time;
 }AppCtx;
 
@@ -45,6 +46,9 @@ typedef struct {
 
 /* The static inline statement will tell the compiler to inline the function in the code directly instead of making multiple function calls. This improves performance especially for small functions that are called repeatedly throughout the program. */
 
+/* The Kronecker Delta */
+static const PetscInt delta2D[2*2] = {1,0,0,1};
+static const PetscInt delta3D[3*3] = {1,0,0,0,1,0,0,0,1};
 
 PETSC_STATIC_INLINE void TensContrR44(PetscScalar C[], PetscScalar A[], PetscScalar B[], PetscInt ndim)
 {				/* Tensor contraction for two rank 4 tensors
@@ -95,7 +99,6 @@ PETSC_STATIC_INLINE void TensContrR42(PetscScalar C[], PetscScalar A[],const  Pe
 
 
 
-
 PetscErrorCode zero_scalar(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
 {
   u[0]=0.0;
@@ -131,7 +134,7 @@ void f0_u(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], cons
   const PetscInt Ncomp = dim;
   const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
   PetscInt comp;
-  for(comp=0;comp<Ncomp;comp++) f0[comp]=0;
+  for(comp=0;comp<Ncomp;comp++) f0[comp]=0.0;
     
 }
 void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f0[])
@@ -142,6 +145,7 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
   PetscInt comp;
   for(comp=0;comp<Ncomp;comp++) f0[comp]= 0.0-rho*u_t[Ncomp+comp];
 }
+
 
 void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
 {
@@ -158,7 +162,57 @@ void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], c
       f1[comp*dim+d]=mu*(u_x[comp*dim+d]+u_x[d*dim+comp]);
     }
     for(d=0;d<dim;d++){
-      f1[comp*dim+comp]+=lbda*u_x[d*dim+d];
+      f1[comp*dim+comp]+=lbda/dim*u_x[d*dim+d];
+    }
+  }
+}
+
+void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+               const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+               const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+               const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+               const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
+{
+  const PetscInt Ncomp = dim;
+  const PetscReal mu =86.0, lbda=115.4;
+  PetscScalar F[dim*Ncomp], E[dim*Ncomp], C[dim*Ncomp];
+  PetscInt d, comp,i;
+  
+  /* In case of large deformations, f1 should be the second piola kirchhoff stress tensor */
+  /* TODO: If we have rigid body motion, we should perform a polar decomposition of the
+     deformation gradient tensor. This is not yet done in this version.*/
+
+  /* Step 1: Create the deformation gradient tensor F=I+u_x */
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      F[d*dim+comp] = u_x[d*dim+comp];
+    }
+    F[d*dim+d] += 1;
+  }
+  
+  /* Step 2: Create the Cauchy-Green Deformation Tensor C = F^T F*/
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      for (i=0;i<dim;i++){
+        C[d*dim+comp] += F[i*dim+d]*F[i*dim+comp];
+      }
+    }
+  }
+  /* Step 3: Create the Lagrangian strain tensor E=0.5*(C-1) */
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      E[d*dim+comp] = 0.5*C[d*dim+comp];
+    }
+    E[d*dim+d] -= 0.5;
+  }
+  /* Step 4: Create the second piola - Kirchoff stress tensor f1 = lbda*tr(E)*1 +2*mu*E */
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      f1[d*dim+comp] = 2*mu*E[d*dim+comp];
+      /* PetscPrintf(PETSC_COMM_WORLD,"f1[%i,%i] = %f\n",d,comp,f1[d*dim+comp]); */
+    }
+    for (comp=0; comp<Ncomp; comp++){
+      f1[d*dim+d] += lbda/dim*E[comp*dim+comp];
     }
   }
 }
@@ -187,6 +241,64 @@ void g3_uu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
     }
   }
 }
+
+void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+	      const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+	      const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+	      const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+	      const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+	      PetscScalar g3[]){
+
+  const PetscReal mu = 86, lbda = 115.4;
+  const PetscInt Ncomp = dim;
+  PetscInt i, j, k, l, m, n;
+  PetscScalar G[dim*dim*Ncomp*Ncomp];  /* Cauchy-Green  strain tensor */
+  PetscScalar D[dim*dim*Ncomp*Ncomp];  /* constitutive tensor for isotropic material */
+  /* constructing the cauchy-green strain tensor */
+  for (m=0;m<dim;m++){  /* primary index of the cauchy green strain tensor */
+    for (j=0;j<dim;j++){  /* component of trial function */
+      for (n=0;n<Ncomp;n++){  /* secondary index of the cauchy green strain tensor */
+        for (l=0;l<Ncomp;l++){  /* derivative index for trial function */
+          G[((m*dim+j)*dim+n)*dim+l]=delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+l])+delta2D[m*dim+l]*delta2D[n*dim+j];
+          PetscPrintf(PETSC_COMM_WORLD,"%f\n",G[((m*dim+j)*dim+n)*dim+l]);
+
+        }
+      }
+    }
+  }
+
+  /* constructing the constitutive tensor for isotropic material */
+  for (i=0;i<dim;i++){  /* component of test function */
+    for (m=0;m<dim;m++){  /* primary index of the lagrangian strain tensor */
+      for (k=0;k<dim;k++){  /* derivative index of the test function */
+        for (n=0;n<dim;n++){  /* secondary index of the lagrangian strain
+                               * tensor*/
+          D[((i*dim+m)*dim+k)*dim+n] = lbda*delta2D[i*dim+k]*delta2D[m*dim+n]+mu*(delta2D[i*dim+m]*delta2D[k*dim+n]+delta2D[i*dim+n]*delta2D[k*dim+m]);
+        }
+      }
+    }
+  }
+  /* constructing the integrand for gradient of testfunction and gradient of trialfunction */
+  for (i=0;i<dim;i++){  /* component of test function */
+    for (j=0;j<dim;j++){  /* component of the trial function */
+      for (k=0;k<dim;k++){  /* derivative index of the test funciton */
+        for (l=0;l<dim;l++){  /* derivative index of the trial function */
+          for (m=0;m<dim;m++){  /* primary index of the cauchy-green strain
+                                 * tensor */
+            for (n=0;n<dim;n++){  /* secondary index of the cauchy-green
+                                   * strain tensor */
+
+              g3[((i*dim+j)*dim+k)*dim+l] += D[((i*dim+m)*dim+k)*dim+n]*0.5*(G[((m*dim+j)*dim+n)*dim+l]);/* -delta2D[m*dim+n]); */
+            }
+          }
+          /* PetscPrintf(PETSC_COMM_WORLD,"%f\n", g3[((i*dim+j)*dim+k)*dim+l]); */
+        }
+      }
+    }
+  }
+  
+}
+
 
 void f0_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                 const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
@@ -326,6 +438,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->visualization = NONE;
   options->neumann = PETSC_FALSE;
   options->transient = PETSC_FALSE;
+  options->ldis = PETSC_FALSE;
   options->time.total = 3.0;
   options->time.dt = 0.1;
   
@@ -350,6 +463,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->visualization = (Visualization) vis;
   ierr = PetscOptionsBool("-neumann", "Apply Neumann boundary conditions on the rightmost face.","cimply.c",options->neumann, &options->neumann,NULL);CHKERRQ(ierr);
   ierr = PetscOptionsBool("-transient", "Conduct a transient analysis. Default false.","cimply.c", options->transient, &options->transient,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-large_displacement", "Use Lagrangian strain and the second piola Kirchoff stress for large displacments","cimpy.c",options->ldis, &options->ldis, NULL);CHKERRQ(ierr);
   ierr = PetscOptionsEnd(); CHKERRQ(ierr);
   return(0);
     }
@@ -389,11 +503,17 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
   /* Setting up the linear elasticity problem */
   if (user->transient){
     ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u_2d);CHKERRQ(ierr);
+    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
+  }
+  else if(user->ldis){
+    ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_ldis);CHKERRQ(ierr);
+    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_ldis);CHKERRQ(ierr);
   }
   else{
     ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d);CHKERRQ(ierr);
+    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
   }
-  ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
+
   /* setting up the velocity field for the transient analysis */
   if(user->transient){
     ierr = PetscDSSetResidual(prob,1,f0_vel_2d,f1_vel_2d);CHKERRQ(ierr);
@@ -430,6 +550,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   ierr = PetscFECreateDefault(dm, dim, dim, simplex,"def_",-1,&fe);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) fe, "deformation");CHKERRQ(ierr);
   if(user->neumann){
+    if (user->ldis) PetscPrintf(PETSC_COMM_WORLD,"Large displacement formulation has no option for neumann conditions as of yet");
     ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
     ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr);
     /* Creating BD FE */
@@ -437,6 +558,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     ierr = PetscObjectSetName((PetscObject) fe_bd, "deformation");CHKERRQ(ierr);
   }
   if(user->transient){
+    if (user->ldis) PetscPrintf(PETSC_COMM_WORLD,"Large displacement formulation has no option for transient as of yet");
     ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
     ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr);
     /* Creating the FE field for the velocity */
@@ -621,7 +743,7 @@ int main(int argc, char **argv){
     ierr = DMCreateGlobalVector(dm,&u);CHKERRQ(ierr);
     ierr = VecDuplicate(u,&r);CHKERRQ(ierr);
     
-    ierr = VecSet(u,(PetscReal) 1.0);CHKERRQ(ierr);
+    ierr = VecSet(u,(PetscReal) 0.0);CHKERRQ(ierr);
     
     
     ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
