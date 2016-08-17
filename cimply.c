@@ -123,8 +123,8 @@ PetscErrorCode coordinates(PetscInt dim, PetscReal time, const PetscReal x[], Pe
 
 PetscErrorCode pull(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
 {
-  u[0] = 0.00;
-  u[1] = 0.01;
+  u[0] = 0.0;
+  u[1] = 0.1;
   return 0;
 }
 
@@ -132,7 +132,6 @@ PetscErrorCode pull(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt 
 void f0_u(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f0[])
 {
   const PetscInt Ncomp = dim;
-  const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
   PetscInt comp;
   for(comp=0;comp<Ncomp;comp++) f0[comp]=0.0;
     
@@ -141,7 +140,6 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
 {
   const PetscInt Ncomp = dim;
   const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
-  PetscReal b,c;               /* exist temporarily for the sake of debugging */
   PetscInt comp;
   for(comp=0;comp<Ncomp;comp++) f0[comp]= 0.0-rho*u_t[Ncomp+comp];
 }
@@ -162,7 +160,7 @@ void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], c
       f1[comp*dim+d]=mu*(u_x[comp*dim+d]+u_x[d*dim+comp]);
     }
     for(d=0;d<dim;d++){
-      f1[comp*dim+comp]+=lbda/dim*u_x[d*dim+d];
+      f1[comp*dim+comp]+=lbda*u_x[d*dim+d];
     }
   }
 }
@@ -174,7 +172,7 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
 {
   const PetscInt Ncomp = dim;
-  const PetscReal mu =86.0, lbda=115.4;
+  const PetscReal mu =86, lbda=115.4;
   PetscScalar F[dim*Ncomp], E[dim*Ncomp], C[dim*Ncomp];
   PetscInt d, comp,i;
   
@@ -212,10 +210,10 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
       /* PetscPrintf(PETSC_COMM_WORLD,"f1[%i,%i] = %f\n",d,comp,f1[d*dim+comp]); */
     }
     for (comp=0; comp<Ncomp; comp++){
-      f1[d*dim+d] += lbda/dim*E[comp*dim+comp];
+      f1[d*dim+d] += lbda*E[comp*dim+comp];
     }
   }
-}
+ }
 
 
 void g3_uu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
@@ -259,9 +257,7 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
     for (j=0;j<dim;j++){  /* component of trial function */
       for (n=0;n<Ncomp;n++){  /* secondary index of the cauchy green strain tensor */
         for (l=0;l<Ncomp;l++){  /* derivative index for trial function */
-          G[((m*dim+j)*dim+n)*dim+l]=delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+l])+delta2D[m*dim+l]*delta2D[n*dim+j];
-          PetscPrintf(PETSC_COMM_WORLD,"%f\n",G[((m*dim+j)*dim+n)*dim+l]);
-
+          G[((m*dim+j)*dim+n)*dim+l]=delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*delta2D[n*dim+j];
         }
       }
     }
@@ -287,11 +283,15 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                                  * tensor */
             for (n=0;n<dim;n++){  /* secondary index of the cauchy-green
                                    * strain tensor */
+              /* Maybe it helps if I assemble the tensor directly? -- nope */
+              g3[((i*dim+j)*dim+k)*dim+l] += /* 0.5*(lbda*delta2D[i*dim+k]*delta2D[m*dim+n]+mu*(delta2D[i*dim+m]*delta2D[k*dim+n]+delta2D[i*dim+n]*delta2D[k*dim+m]))*(delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*delta2D[n*dim+j]); */
 
-              g3[((i*dim+j)*dim+k)*dim+l] += D[((i*dim+m)*dim+k)*dim+n]*0.5*(G[((m*dim+j)*dim+n)*dim+l]);/* -delta2D[m*dim+n]); */
+              D[((i*dim+m)*dim+k)*dim+n]*0.5*(G[((m*dim+j)*dim+n)*dim+l]);
             }
           }
-          /* PetscPrintf(PETSC_COMM_WORLD,"%f\n", g3[((i*dim+j)*dim+k)*dim+l]); */
+          /* PetscPrintf(PETSC_COMM_WORLD,"g3 [%i %i %i %i] = %f   u0_0 = %f  u0_1 = %f   u1_0 = %f   u1_1 = %f \n", i,j,k,l, g3[((i*dim+j)*dim+k)*dim+l], u_x[0*dim+0], u_x[0*dim+1], u_x[1*dim + 0], u_x[1*dim+1]); */
+          
+
         }
       }
     }
@@ -506,6 +506,7 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
     ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
   }
   else if(user->ldis){
+    if(user->verbose) ierr = PetscPrintf(PETSC_COMM_WORLD,"Setting up large displacement problem\n");
     ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_ldis);CHKERRQ(ierr);
     ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_ldis);CHKERRQ(ierr);
   }
@@ -628,7 +629,7 @@ int main(int argc, char **argv){
   /* ierr = CreateMesh(PETSC_COMM_WORLD,&user,&dm);CHKERRQ(ierr); */
 
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"testmesh_2D_box_quad.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"Beam_coarse.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
   if (distributeddm) {
     ierr=DMDestroy(&dm);CHKERRQ(ierr);
