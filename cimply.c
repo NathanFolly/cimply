@@ -174,6 +174,7 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   const PetscInt Ncomp = dim;
   const PetscReal mu =86, lbda=115.4;
   PetscScalar F[dim*Ncomp], E[dim*Ncomp], C[dim*Ncomp];
+  PetscReal detF;
   PetscInt d, comp,i;
   
   /* In case of large deformations, f1 should be the second piola kirchhoff stress tensor */
@@ -186,7 +187,7 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
       F[d*dim+comp] = u_x[d*dim+comp];
     }
     F[d*dim+d] += 1;
-  }
+  } 
   
   /* Step 2: Create the Cauchy-Green Deformation Tensor C = F^T F*/
   for (d=0;d<dim;d++){
@@ -213,6 +214,13 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
       f1[d*dim+d] += lbda*E[comp*dim+comp];
     }
   }
+  /* maybe I need to multiply with J (J=detF) ?*/
+  detF = F[0]*F[3]-F[1]*F[2];
+  /* for (comp=0;comp<Ncomp;comp++){ */
+  /*   for (d=0;d<dim;d++){ */
+  /*     f1[comp*dim+d] *= (detF); */
+  /*   } */
+  /* } */
  }
 
 
@@ -240,6 +248,72 @@ void g3_uu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   }
 }
 
+void g1_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+	      const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+	      const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+	      const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+	      const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+	      PetscScalar g1[]){
+
+  /* We need to linearize our energy form since it is dependent on the deformation
+   We have L[a(u,û)] = int_omega0 DeltaS:Ê+S:DeltaÊ dOmega0
+  Now DeltaS is (partial S)/(partial E) : DeltaE which is D:DeltaE where D is the constitutive tensor for a St.Venant Kirchhoff material.
+  This function here hence presents the integrand for the test function (Ê) and the trial function gradient term. It should be S, the second Piola Kirchhoff stress*/
+  const PetscInt Ncomp = dim;
+  const PetscReal mu =86, lbda=115.4;
+  PetscScalar F[dim*Ncomp], E[dim*Ncomp], C[dim*Ncomp], S[dim*Ncomp];
+  PetscScalar G[dim*dim*Ncomp*Ncomp];  /* Cauchy-Green  strain tensor */
+  PetscReal detF;
+  PetscInt d, comp,i,j,l,m,n;
+ 
+ /* Step 1: Create the deformation gradient tensor F=I+u_x */
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      F[d*dim+comp] = u_x[d*dim+comp];
+    }
+    F[d*dim+d] += 1;
+  } 
+  
+  /* Step 2: Create the Cauchy-Green Deformation Tensor C = F^T F*/
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      for (i=0;i<dim;i++){
+        C[d*dim+comp] += F[i*dim+d]*F[i*dim+comp];
+      }
+    }
+  }
+  /* Step 3: Create the Lagrangian strain tensor E=0.5*(C-1) */
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      E[d*dim+comp] = 0.5*C[d*dim+comp];
+    }
+    E[d*dim+d] -= 0.5;
+  }
+  /* Step 4: Create the second piola - Kirchoff stress tensor f1 = lbda*tr(E)*1 +2*mu*E */
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      S[d*dim+comp] = 2*mu*E[d*dim+comp];
+      /* PetscPrintf(PETSC_COMM_WORLD,"f1[%i,%i] = %f\n",d,comp,f1[d*dim+comp]); */
+    }
+    for (comp=0; comp<Ncomp; comp++){
+      S[d*dim+d] += lbda*E[comp*dim+comp];
+    }
+  }
+
+    /* constructing the cauchy-green strain tensor */
+  for (m=0;m<dim;m++){  /* primary index of the cauchy green strain tensor */
+    for (j=0;j<dim;j++){  /* component of trial function */
+      for (n=0;n<Ncomp;n++){  /* secondary index of the cauchy green strain tensor */
+        for (l=0;l<Ncomp;l++){  /* derivative index for trial function */
+          g1[j*dim+l]+=S[n*dim+m]*0.5*(delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m]+delta2D[m*dim+n]*u_x[j*dim+m])+delta2D[m*dim+l]*delta2D[n*dim+j]);
+        }
+      }
+    }
+  }
+
+  
+}
+
 void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 	      const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
 	      const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
@@ -250,14 +324,31 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   const PetscReal mu = 86, lbda = 115.4;
   const PetscInt Ncomp = dim;
   PetscInt i, j, k, l, m, n;
+  PetscInt d, comp;
   PetscScalar G[dim*dim*Ncomp*Ncomp];  /* Cauchy-Green  strain tensor */
   PetscScalar D[dim*dim*Ncomp*Ncomp];  /* constitutive tensor for isotropic material */
-  /* constructing the cauchy-green strain tensor */
+  PetscScalar F[Ncomp*dim];            /* deformation gradient */
+  PetscReal detF;                      /* determinant of F */
+
+
+  for (d=0;d<dim;d++){
+    for (comp=0; comp<Ncomp; comp++){
+      F[d*dim+comp] = u_x[d*dim+comp];
+    }
+    F[d*dim+d] += 1;
+  } 
+
+  detF = F[0]*F[3]-F[1]*F[2];
+
+
+
+
+  /* partial derivative of the lagrange strain ensor with respect to the displacement gradient G_mjnl = (partial E_mn)/(partial u^j_l) */
   for (m=0;m<dim;m++){  /* primary index of the cauchy green strain tensor */
     for (j=0;j<dim;j++){  /* component of trial function */
       for (n=0;n<Ncomp;n++){  /* secondary index of the cauchy green strain tensor */
         for (l=0;l<Ncomp;l++){  /* derivative index for trial function */
-          G[((m*dim+j)*dim+n)*dim+l]=delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*delta2D[n*dim+j];
+          G[((m*dim+j)*dim+n)*dim+l]=delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*(u_x[j*dim+n]+delta2D[n*dim+j]);
         }
       }
     }
@@ -286,17 +377,15 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
               /* Maybe it helps if I assemble the tensor directly? -- nope */
               g3[((i*dim+j)*dim+k)*dim+l] += /* 0.5*(lbda*delta2D[i*dim+k]*delta2D[m*dim+n]+mu*(delta2D[i*dim+m]*delta2D[k*dim+n]+delta2D[i*dim+n]*delta2D[k*dim+m]))*(delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*delta2D[n*dim+j]); */
 
-              D[((i*dim+m)*dim+k)*dim+n]*0.5*(G[((m*dim+j)*dim+n)*dim+l]);
+                  D[((i*dim+m)*dim+k)*dim+n]*0.5*(G[((m*dim+j)*dim+n)*dim+l]);
             }
           }
           /* PetscPrintf(PETSC_COMM_WORLD,"g3 [%i %i %i %i] = %f   u0_0 = %f  u0_1 = %f   u1_0 = %f   u1_1 = %f \n", i,j,k,l, g3[((i*dim+j)*dim+k)*dim+l], u_x[0*dim+0], u_x[0*dim+1], u_x[1*dim + 0], u_x[1*dim+1]); */
-          
-
         }
       }
     }
   }
-  
+  /* PetscPrintf(PETSC_COMM_WORLD,"\n \n " ); */
 }
 
 
@@ -316,6 +405,53 @@ void f0_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
     f0[comp] = traction[comp];
   }
 }
+
+void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+                const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+                const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+                const PetscScalar a_x[], PetscReal t, const PetscReal x[], const PetscReal n[],
+                PetscScalar f0[])
+{
+  const PetscInt Ncomp=dim;
+  /* TODO: define the boundary residual for the large displacement formulation (should be the first piola Kirchhoff stress */
+  const PetscScalar traction[] = {0.0,0.0,0.0, 0.1};
+  PetscInt comp, d, i;
+  PetscScalar FT[Ncomp*dim], FTInv[Ncomp*dim], S[Ncomp*dim];
+  /* step 1 construct the transpose of the deformation gradient tensor F^T */
+  for(comp=0; comp<Ncomp; comp++){
+    for(d=0; d<dim; d++){
+      FT[comp*dim+d]= u_x[d*dim+comp];
+    }
+    FT[comp*dim+comp]+=1;
+  }
+  /* Step 2 construct the inverse of F^T: */
+  FTInv[0]=FT[3]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
+  FTInv[1]=-FT[1]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
+  FTInv[2]=-FT[2]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
+  FTInv[3]=FT[0]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
+
+  /* Step 3 Create the second piola Kirchhoff stress tensor */
+  for (comp=0; comp<Ncomp; ++comp){
+    for (d=0;d<dim;d++){
+      for (i=0;i<dim;i++){
+        S[comp*dim+d] += traction[comp*dim+i]*FTInv[i*dim+d];
+      }
+    }
+  }
+  /* Step 4 S*n */
+
+  for (comp=0; comp<Ncomp; ++comp){
+    for (d=0;d<dim;d++){
+      f0[comp]+=S[comp*dim+d]*n[d];
+      /* PetscPrintf(PETSC_COMM_WORLD,"S[%i] = %f      n[%i]  = %f \n", comp*dim+d, S[comp*dim+d],comp,n[comp]); */
+    }
+    /* PetscPrintf(PETSC_COMM_WORLD,"f0[%i] = %f \n", comp, f0[comp]); */
+  }
+  
+}
+    
+
     
 void f1_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
         const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
@@ -524,9 +660,14 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
   }
   /* Setting the Neumann Boudnary Condition */
   if (user->neumann){
+    if (user->ldis){
+      ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_ldis,f1_u_bd_2d);CHKERRQ(ierr);
+    }
+    else{
     ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_2d,f1_u_bd_2d);CHKERRQ(ierr);
     /* ierr = PetscDSSetBdJacobian(prob,0,0,NULL,g1_uu_bd_2d,NULL,NULL);CHKERRQ(ierr); */
-
+    }
+    
   }
   
   ierr = PetscDSGetNumFields(prob,&NumFields);CHKERRQ(ierr);
@@ -583,7 +724,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     const PetscInt Nfid = 1;
     const PetscInt fid[] = {5}; /* {5}; */ 	/* The fixed faces.*/
     const PetscInt Npid  =1;
-    const PetscInt pid[] = {3}; /* {3}; */ 	/* The pressure loaded faces */
+    const PetscInt pid[] = {4}; /* {4}; */ 	/* The pressure loaded faces */
   
 
     ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr);
@@ -646,7 +787,7 @@ int main(int argc, char **argv){
     PetscReal ftime;
     PetscInt nsteps, its;
     TSConvergedReason ConvergedReason;
-    PetscBool loadedspring = PETSC_TRUE;
+    PetscBool loadedspring = PETSC_FALSE;
     
     if (loadedspring){  /* preloading the cantilever so that I can run the TS without loading to see if the problem comes from the neumann conditions in the displacement field */
       user.transient=PETSC_FALSE;
@@ -752,11 +893,13 @@ int main(int argc, char **argv){
     A=J;
     
     ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
+    
+    ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
+
     if (user.debug){  		/* Showing the Jacobi matrix for debugging purposes */
       ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr);
       ierr = MatView(A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
     }
-    ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
     
     ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
     
