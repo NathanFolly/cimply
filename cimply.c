@@ -20,6 +20,11 @@ typedef struct  /* The Leapfrog timestepping context */
   PetscBool halfstep;  /* Is the timestep a halfstep? */
 } TSctx;
 
+typedef struct  /* Material structure */
+{
+  PetscReal mu;
+  PetscReal lbda;
+}Material_type;
 
 
 typedef struct {
@@ -40,6 +45,8 @@ typedef struct {
   PetscBool transient;
   PetscBool ldis;  /* for large displacement */
   TSctx time;
+  Material_type material;
+  
 }AppCtx;
 
 
@@ -148,7 +155,7 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
 void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
 {
   const PetscInt Ncomp = dim;
-  const PetscReal mu = 86, lbda=115.4;
+  const PetscReal mu = 76.9, lbda=115.4;
   
   /* f1 is the cauchy stress tensor*/
   
@@ -172,7 +179,7 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
 {
   const PetscInt Ncomp = dim;
-  const PetscReal mu =86, lbda=115.4;
+  const PetscReal mu =76.9, lbda=115.4;
   PetscScalar F[dim*Ncomp], E[dim*Ncomp], C[dim*Ncomp];
   PetscReal detF;
   PetscInt d, comp,i;
@@ -232,7 +239,7 @@ void g3_uu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 	      PetscScalar g3[]){
   
   /* const PetscInt Ncomp = dim; */
-  const PetscReal mu = 86, lbda=115.4;
+  const PetscReal mu = 76.9, lbda=115.4;
   PetscInt i,j,k,l;
   
   /* g3 is the elasticity tensor */
@@ -260,7 +267,7 @@ void g1_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   Now DeltaS is (partial S)/(partial E) : DeltaE which is D:DeltaE where D is the constitutive tensor for a St.Venant Kirchhoff material.
   This function here hence presents the integrand for the test function (Ê) and the trial function gradient term. It should be S, the second Piola Kirchhoff stress*/
   const PetscInt Ncomp = dim;
-  const PetscReal mu =86, lbda=115.4;
+  const PetscReal mu =76.9, lbda=115.4;
   PetscScalar F[dim*Ncomp], E[dim*Ncomp], C[dim*Ncomp], S[dim*Ncomp];
   PetscScalar G[dim*dim*Ncomp*Ncomp];  /* Cauchy-Green  strain tensor */
   PetscReal detF;
@@ -321,7 +328,7 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 	      const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
 	      PetscScalar g3[]){
 
-  const PetscReal mu = 86, lbda = 115.4;
+  const PetscReal mu = 76.9, lbda = 115.4;
   const PetscInt Ncomp = dim;
   PetscInt i, j, k, l, m, n;
   PetscInt d, comp;
@@ -398,13 +405,16 @@ void f0_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 {
   const PetscInt Ncomp=dim;
   /* Setting  the surface traction tensor eqal to the external load acting on the boundary in question  */
-  const PetscScalar traction[] = {0.0, 0.01};
+  const PetscReal mu =76.9, lbda=115.4;
+  const PetscScalar traction[] = {0.0, 0.001};
   PetscInt comp;
   
   for (comp=0; comp<Ncomp; ++comp){
     f0[comp] = traction[comp];
   }
+  
 }
+
 
 void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                 const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
@@ -415,7 +425,8 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 {
   const PetscInt Ncomp=dim;
   /* TODO: define the boundary residual for the large displacement formulation (should be the first piola Kirchhoff stress */
-  const PetscScalar traction[] = {0.0,0.0,0.0, 0.1};
+  const PetscReal mu =76.9, lbda=115.4;
+  const PetscScalar traction[] = {0.0,0.0,0.0, (2*mu+lbda)*0.0001};
   PetscInt comp, d, i;
   PetscScalar FT[Ncomp*dim], FTInv[Ncomp*dim], S[Ncomp*dim];
   /* step 1 construct the transpose of the deformation gradient tensor F^T */
@@ -435,7 +446,7 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   for (comp=0; comp<Ncomp; ++comp){
     for (d=0;d<dim;d++){
       for (i=0;i<dim;i++){
-        S[comp*dim+d] += traction[comp*dim+i]*FTInv[i*dim+d];
+        S[comp*dim+d] += traction[comp*dim+i]*FT[i*dim+d];
       }
     }
   }
@@ -443,12 +454,12 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (comp=0; comp<Ncomp; ++comp){
     for (d=0;d<dim;d++){
-      f0[comp]+=S[comp*dim+d]*n[d];
+      f0[comp]+=S[comp*dim+d]*n[d]*0;
       /* PetscPrintf(PETSC_COMM_WORLD,"S[%i] = %f      n[%i]  = %f \n", comp*dim+d, S[comp*dim+d],comp,n[comp]); */
     }
     /* PetscPrintf(PETSC_COMM_WORLD,"f0[%i] = %f \n", comp, f0[comp]); */
   }
-  
+  f0[1] =0.001;
 }
     
 
@@ -477,7 +488,7 @@ void g1_uu_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                  const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
                  const PetscReal n[], PetscScalar g1[]){
     
-  const PetscReal mu=86, lbda=115.4;
+  const PetscReal mu=76.9, lbda=115.4;
   PetscInt Ncomp = dim;
   PetscInt i,j,k;
   
@@ -577,6 +588,9 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->ldis = PETSC_FALSE;
   options->time.total = 3.0;
   options->time.dt = 0.1;
+
+  options->material.mu = 76.9;
+  options->material.lbda = 115.4;
   
 
   ierr = PetscOptionsBegin(comm,"", "Linear elasticity problem options", "DMPLEX"); CHKERRQ(ierr);
@@ -770,7 +784,10 @@ int main(int argc, char **argv){
   /* ierr = CreateMesh(PETSC_COMM_WORLD,&user,&dm);CHKERRQ(ierr); */
 
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"Beam_coarse.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+
+  /* testmesh_2D_box_quad.msh */
+  /* Beam_coarse.msh */
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"Beam_fine.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
   if (distributeddm) {
     ierr=DMDestroy(&dm);CHKERRQ(ierr);
