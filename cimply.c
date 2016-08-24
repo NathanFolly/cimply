@@ -44,6 +44,7 @@ typedef struct {
   PetscBool neumann;
   PetscBool transient;
   PetscBool ldis;  /* for large displacement */
+  PetscBool planestress;  /* 2D analysis type: plane stress */
   TSctx time;
   Material_type material;
   
@@ -154,8 +155,9 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
 
 void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
 {
+  /* Teo-dimensional plain strain formulation */
   const PetscInt Ncomp = dim;
-  const PetscReal mu = 76.9, lbda=115.4;
+  const PetscReal mu =76.923076923, lbda=115.384615385;
   
   /* f1 is the cauchy stress tensor*/
   
@@ -168,6 +170,28 @@ void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], c
     }
     for(d=0;d<dim;d++){
       f1[comp*dim+comp]+=lbda*u_x[d*dim+d];
+    }
+  }
+}
+
+void f1_u_2d_pstress(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
+{
+  /* Teo-dimensional plain strain formulation */
+  const PetscInt Ncomp = dim;
+  const PetscReal mu =76.923076923, lbda=115.384615385;
+  const PetscReal lbdaBar = 2*lbda*mu/(lbda+2*mu);
+  
+  /* f1 is the cauchy stress tensor*/
+  
+  /*u_x = deformation gradient*/
+  /* Hence is the strain epsilon_ij=0.5(u_i,j+u_j,i) => epsilon[comp*dim+d]=0.5(u_x[comp*dim+d]+u_x[d*dim+comp]) */
+  PetscInt comp, d;
+  for(comp=0;comp<Ncomp;comp++){
+    for(d=0;d<dim;d++){
+      f1[comp*dim+d]=mu*(u_x[comp*dim+d]+u_x[d*dim+comp]);
+    }
+    for(d=0;d<dim;d++){
+      f1[comp*dim+comp]+=lbdaBar*u_x[d*dim+d];
     }
   }
 }
@@ -187,6 +211,7 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   /* In case of large deformations, f1 should be the second piola kirchhoff stress tensor */
   /* TODO: If we have rigid body motion, we should perform a polar decomposition of the
      deformation gradient tensor. This is not yet done in this version.*/
+  /* This is the two-dimensional plane strain formulation */
 
   /* Step 1: Create the deformation gradient tensor F=I+u_x */
   for (d=0;d<dim;d++){
@@ -239,16 +264,43 @@ void g3_uu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 	      PetscScalar g3[]){
   
   /* const PetscInt Ncomp = dim; */
-  const PetscReal mu = 76.9, lbda=115.4;
+  const PetscReal mu =76.923076923, lbda=115.384615385;
   PetscInt i,j,k,l;
   
   /* g3 is the elasticity tensor */
+  /* This is the 2-D plane strain formulation for a saint-venant kirchhoff material */
   
   for (i=0;i<dim;i++){
     for (j=0;j<dim;j++){
       for (k=0; k < dim; k++){
         for (l=0;l<dim; l++){
           g3[((i*dim+j)*dim+k)*dim+l]=lbda*delta2D[i*dim+k]*delta2D[j*dim+l]+2*mu*delta2D[i*dim+k]*delta2D[j*dim+l]*delta2D[i*dim+j]+mu*(1-delta2D[i*dim+k])*(1-delta2D[j*dim+l]);
+        }
+      }
+    }
+  }
+}
+
+void g3_uu_2d_pstress(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+	      const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+	      const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+	      const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+	      const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+	      PetscScalar g3[]){
+  
+  /* const PetscInt Ncomp = dim; */
+  const PetscReal mu =76.923076923, lbda=115.384615385;
+  const PetscReal lbdaBar = 2*lbda*mu/(lbda+2*mu);
+  PetscInt i,j,k,l;
+  
+  /* g3 is the elasticity tensor */
+  /* This is the 2-D plane strain formulation for a saint-venant kirchhoff material */
+  
+  for (i=0;i<dim;i++){
+    for (j=0;j<dim;j++){
+      for (k=0; k < dim; k++){
+        for (l=0;l<dim; l++){
+          g3[((i*dim+j)*dim+k)*dim+l]=lbdaBar*delta2D[i*dim+k]*delta2D[j*dim+l]+2*mu*delta2D[i*dim+k]*delta2D[j*dim+l]*delta2D[i*dim+j]+mu*(1-delta2D[i*dim+k])*(1-delta2D[j*dim+l]);
         }
       }
     }
@@ -405,12 +457,13 @@ void f0_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 {
   const PetscInt Ncomp=dim;
   /* Setting  the surface traction tensor eqal to the external load acting on the boundary in question  */
-  const PetscReal mu =76.9, lbda=115.4;
+  const PetscReal mu =76.923076923, lbda=115.384615385;
   const PetscScalar traction[] = {0.0, 0.001};
   PetscInt comp;
+  const PetscReal pressure = 0.001;
   
   for (comp=0; comp<Ncomp; ++comp){
-    f0[comp] = traction[comp];
+    f0[comp] = pressure*n[comp];
   }
   
 }
@@ -588,6 +641,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->ldis = PETSC_FALSE;
   options->time.total = 3.0;
   options->time.dt = 0.1;
+  options->planestress = PETSC_TRUE;
 
   options->material.mu = 76.9;
   options->material.lbda = 115.4;
@@ -614,6 +668,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   ierr = PetscOptionsBool("-neumann", "Apply Neumann boundary conditions on the rightmost face.","cimply.c",options->neumann, &options->neumann,NULL);CHKERRQ(ierr);
   ierr = PetscOptionsBool("-transient", "Conduct a transient analysis. Default false.","cimply.c", options->transient, &options->transient,NULL);CHKERRQ(ierr);
   ierr = PetscOptionsBool("-large_displacement", "Use Lagrangian strain and the second piola Kirchoff stress for large displacments","cimpy.c",options->ldis, &options->ldis, NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-planestress", "Use plane stress formulation in case of a 2D analysis. Default true.","cimply.c",options->planestress, &options->planestress,NULL);CHKERRQ(ierr);
   ierr = PetscOptionsEnd(); CHKERRQ(ierr);
   return(0);
     }
@@ -660,10 +715,15 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
     ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_ldis);CHKERRQ(ierr);
     ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_ldis);CHKERRQ(ierr);
   }
+  else if(user->planestress){
+    ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d_pstress);CHKERRQ(ierr);
+    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d_pstress);CHKERRQ(ierr);
+  }
   else{
     ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d);CHKERRQ(ierr);
     ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
   }
+
 
   /* setting up the velocity field for the transient analysis */
   if(user->transient){
@@ -701,6 +761,8 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   PetscBool simplex = user->simplex;
   PetscQuadrature q;
   PetscInt order;
+  PetscInt BSpaceOrder;
+  PetscSpace space;
 
   /* Creating the FE */
   ierr = PetscFECreateDefault(dm, dim, dim, simplex,"def_",-1,&fe);CHKERRQ(ierr);
@@ -751,6 +813,10 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     ierr = DMGetCoarseDM(cdm, &cdm); CHKERRQ(ierr);
   }
 
+  ierr = PetscFEGetBasisSpace(fe,&space);CHKERRQ(ierr);
+  ierr = PetscSpaceGetOrder(space,&BSpaceOrder);CHKERRQ(ierr);
+    PetscPrintf(PETSC_COMM_WORLD,"The order of the basis space is %i \n", BSpaceOrder);
+    
 
   ierr = PetscFEDestroy(&fe); CHKERRQ(ierr);
   if (user->neumann)  ierr = PetscFEDestroy(&fe_bd); CHKERRQ(ierr);
