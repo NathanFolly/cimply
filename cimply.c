@@ -131,9 +131,12 @@ PetscErrorCode coordinates(PetscInt dim, PetscReal time, const PetscReal x[], Pe
 
 PetscErrorCode pull(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
 {
-  u[0] = 0.0;
-  u[1] = 0.1;
-  return 0;
+  PetscInt comp;
+  for(comp=0;comp<dim;comp++){
+    if(comp==1){u[comp]=0.1;}
+    else{u[comp]=0.0;}
+  }
+    return 0;
 }
 
 
@@ -153,7 +156,7 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
 }
 
 
-void f1_u_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
+void f1_u(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar f1[])
 {
   /* Teo-dimensional plain strain formulation */
   const PetscInt Ncomp = dim;
@@ -247,7 +250,7 @@ void f1_u_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
     }
   }
   /* maybe I need to multiply with J (J=detF) ?*/
-  detF = F[0]*F[3]-F[1]*F[2];
+  /* detF = F[0]*F[3]-F[1]*F[2]; */
   /* for (comp=0;comp<Ncomp;comp++){ */
   /*   for (d=0;d<dim;d++){ */
   /*     f1[comp*dim+d] *= (detF); */
@@ -389,25 +392,25 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   PetscScalar F[Ncomp*dim];            /* deformation gradient */
   PetscReal detF;                      /* determinant of F */
 
-
-  for (d=0;d<dim;d++){
-    for (comp=0; comp<Ncomp; comp++){
-      F[d*dim+comp] = u_x[d*dim+comp];
+  PetscInt delta[Ncomp*dim];
+  for (i=0;i<dim;i++){
+    for (j=0;j<dim;j++){
+      if(dim==3){
+        delta[i*dim+j] = delta3D[i*dim+j];
+      }
+      else{
+        delta[i*dim+j]= delta2D[i*dim+j];
+      }
     }
-    F[d*dim+d] += 1;
-  } 
-
-  detF = F[0]*F[3]-F[1]*F[2];
-
-
-
+  }
+  
 
   /* partial derivative of the lagrange strain ensor with respect to the displacement gradient G_mjnl = (partial E_mn)/(partial u^j_l) */
   for (m=0;m<dim;m++){  /* primary index of the cauchy green strain tensor */
     for (j=0;j<dim;j++){  /* component of trial function */
       for (n=0;n<Ncomp;n++){  /* secondary index of the cauchy green strain tensor */
         for (l=0;l<Ncomp;l++){  /* derivative index for trial function */
-          G[((m*dim+j)*dim+n)*dim+l]=delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*(u_x[j*dim+n]+delta2D[n*dim+j]);
+          G[((m*dim+j)*dim+n)*dim+l]=delta[n*dim+l]*(u_x[j*dim+m]+delta[j*dim+m])+delta[m*dim+l]*(u_x[j*dim+n]+delta[n*dim+j]);
         }
       }
     }
@@ -419,7 +422,7 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
       for (k=0;k<dim;k++){  /* derivative index of the test function */
         for (n=0;n<dim;n++){  /* secondary index of the lagrangian strain
                                * tensor*/
-          D[((i*dim+m)*dim+k)*dim+n] = lbda*delta2D[i*dim+k]*delta2D[m*dim+n]+mu*(delta2D[i*dim+m]*delta2D[k*dim+n]+delta2D[i*dim+n]*delta2D[k*dim+m]);
+          D[((i*dim+m)*dim+k)*dim+n] = lbda*delta[i*dim+k]*delta[m*dim+n]+mu*(delta[i*dim+m]*delta[k*dim+n]+delta[i*dim+n]*delta[k*dim+m]);
         }
       }
     }
@@ -434,7 +437,7 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
             for (n=0;n<dim;n++){  /* secondary index of the cauchy-green
                                    * strain tensor */
               /* Maybe it helps if I assemble the tensor directly? -- nope */
-              g3[((i*dim+j)*dim+k)*dim+l] += /* 0.5*(lbda*delta2D[i*dim+k]*delta2D[m*dim+n]+mu*(delta2D[i*dim+m]*delta2D[k*dim+n]+delta2D[i*dim+n]*delta2D[k*dim+m]))*(delta2D[n*dim+l]*(u_x[j*dim+m]+delta2D[j*dim+m])+delta2D[m*dim+l]*delta2D[n*dim+j]); */
+              g3[((i*dim+j)*dim+k)*dim+l] += /* 0.5*(lbda*delta[i*dim+k]*delta[m*dim+n]+mu*(delta[i*dim+m]*delta[k*dim+n]+delta[i*dim+n]*delta[k*dim+m]))*(delta[n*dim+l]*(u_x[j*dim+m]+delta[j*dim+m])+delta[m*dim+l]*delta[n*dim+j]); */
 
                   D[((i*dim+m)*dim+k)*dim+n]*0.5*(G[((m*dim+j)*dim+n)*dim+l]);
             }
@@ -447,8 +450,62 @@ void g3_uu_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   /* PetscPrintf(PETSC_COMM_WORLD,"\n \n " ); */
 }
 
+void g3_uu_3d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+	      const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+	      const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+	      const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+	      const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+	      PetscScalar g3[]){
+  
+  const PetscInt Ncomp = dim;
+  const PetscReal mu =76.923076923, lbda=115.384615385;
+  PetscInt i,j,k,l,m,n;
+    PetscScalar G[dim*dim*Ncomp*Ncomp];  /* Cauchy-Green  strain tensor */
+  PetscScalar D[dim*dim*Ncomp*Ncomp];  /* constitutive tensor for isotropic material */
+    
 
-void f0_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+  /* partial derivative of the cauchy strain ensor with respect to the displacement gradient G_mjnl = (partial epsilon_mn)/(partial u^j_l) */
+  for (m=0;m<dim;m++){  /* primary index of the cauchy green strain tensor */
+    for (j=0;j<dim;j++){  /* component of trial function */
+      for (n=0;n<Ncomp;n++){  /* secondary index of the cauchy green strain tensor */
+        for (l=0;l<Ncomp;l++){  /* derivative index for trial function */
+          G[((m*dim+j)*dim+n)*dim+l]=0.5*(delta3D[n*dim+l]*delta3D[j*dim+m]+delta3D[m*dim+l]*delta3D[n*dim+j]);
+        }
+      }
+    }
+  }
+
+  /* constructing the constitutive tensor for isotropic material */
+  for (i=0;i<dim;i++){  /* component of test function */
+    for (m=0;m<dim;m++){  /* primary index of the cauchy strain tensor */
+      for (k=0;k<dim;k++){  /* derivative index of the test function */
+        for (n=0;n<dim;n++){  /* secondary index of the cauchy strain
+                               * tensor*/
+          D[((i*dim+m)*dim+k)*dim+n] = lbda*delta3D[i*dim+k]*delta3D[m*dim+n]+mu*(delta3D[i*dim+m]*delta3D[k*dim+n]+delta3D[i*dim+n]*delta3D[k*dim+m]);
+        }
+      }
+    }
+  }
+  /* constructing the integrand for gradient of testfunction and gradient of trialfunction */
+  for (i=0;i<dim;i++){  /* component of test function */
+    for (j=0;j<dim;j++){  /* component of the trial function */
+      for (k=0;k<dim;k++){  /* derivative index of the test funciton */
+        for (l=0;l<dim;l++){  /* derivative index of the trial function */
+          for (m=0;m<dim;m++){  /* primary index of the cauchy strain
+                                 * tensor */
+            for (n=0;n<dim;n++){  /* secondary index of the cauchy
+                                   * strain tensor */
+              g3[((i*dim+j)*dim+k)*dim+l] +=  D[((i*dim+m)*dim+k)*dim+n]*(G[((m*dim+j)*dim+n)*dim+l]);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+void f0_u_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                 const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
                 const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
                 const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
@@ -458,12 +515,16 @@ void f0_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   const PetscInt Ncomp=dim;
   /* Setting  the surface traction tensor eqal to the external load acting on the boundary in question  */
   const PetscReal mu =76.923076923, lbda=115.384615385;
-  const PetscScalar traction[] = {0.0, 0.001};
+  const PetscScalar traction[] = {0.0, 0.06, 0.0};
   PetscInt comp;
-  const PetscReal pressure = 0.001;
+  const PetscReal pressure = 0.3;
+  PetscReal nonsense;
+
+  if(x[0]<0.8)nonsense=0.0;
+  else nonsense = 1.0;
   
   for (comp=0; comp<Ncomp; ++comp){
-    f0[comp] = pressure*n[comp];
+    f0[comp] = pressure*n[comp]*nonsense;
   }
   
 }
@@ -479,9 +540,12 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   const PetscInt Ncomp=dim;
   /* TODO: define the boundary residual for the large displacement formulation (should be the first piola Kirchhoff stress */
   const PetscReal mu =76.9, lbda=115.4;
-  const PetscScalar traction[] = {0.0,0.0,0.0, (2*mu+lbda)*0.0001};
+  const PetscScalar traction[] = {0.0,0.0,0.0,0.3,0.0,0.0,0.0,0.0,0.0};
   PetscInt comp, d, i;
   PetscScalar FT[Ncomp*dim], FTInv[Ncomp*dim], S[Ncomp*dim];
+  PetscReal J;
+  PetscReal nonsense;
+  
   /* step 1 construct the transpose of the deformation gradient tensor F^T */
   for(comp=0; comp<Ncomp; comp++){
     for(d=0; d<dim; d++){
@@ -489,17 +553,35 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
     }
     FT[comp*dim+comp]+=1;
   }
+
+  J = (FT[0*3+0]*(FT[1*3+1]*FT[2*3+2] - FT[1*3+2]*FT[2*3+1])+FT[0*3+1]*(FT[1*3+2]*FT[2*3+0] - FT[1*3+0]*FT[2*3+2]) + FT[0*3+2]*(FT[1*3+0]*FT[2*3+1] - FT[1*3+1]*FT[2*3+0]));
+
+  /* Inverse of FT */
+
+  FTInv[0*3+0] = FT[1*3+1]*FT[2*3+2] - FT[1*3+2]*FT[2*3+1];
+  FTInv[0*3+1] = FT[1*3+2]*FT[2*3+0] - FT[1*3+0]*FT[2*3+2];
+  FTInv[0*3+2] = FT[1*3+0]*FT[2*3+1] - FT[1*3+1]*FT[2*3+0];
+  FTInv[1*3+0] = FT[0*3+2]*FT[2*3+1] - FT[0*3+1]*FT[2*3+2];
+  FTInv[1*3+1] = FT[0*3+0]*FT[2*3+2] - FT[0*3+2]*FT[2*3+0];
+  FTInv[1*3+2] = FT[0*3+1]*FT[2*3+0] - FT[0*3+0]*FT[2*3+1];
+  FTInv[2*3+0] = FT[0*3+1]*FT[1*3+2] - FT[0*3+2]*FT[1*3+1];
+  FTInv[2*3+1] = FT[0*3+2]*FT[1*3+0] - FT[0*3+0]*FT[1*3+2];
+  FTInv[2*3+2] = FT[0*3+0]*FT[1*3+1] - FT[0*3+1]*FT[1*3+0];
+  
   /* Step 2 construct the inverse of F^T: */
-  FTInv[0]=FT[3]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
-  FTInv[1]=-FT[1]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
-  FTInv[2]=-FT[2]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
-  FTInv[3]=FT[0]*1/(FT[0]*FT[3]-FT[1]*FT[2]);
+  /* FTInv[0]=FT[3]*1/(FT[0]*FT[3]-FT[1]*FT[2]); */
+  /* FTInv[1]=-FT[1]*1/(FT[0]*FT[3]-FT[1]*FT[2]); */
+  /* FTInv[2]=-FT[2]*1/(FT[0]*FT[3]-FT[1]*FT[2]); */
+  /* FTInv[3]=FT[0]*1/(FT[0]*FT[3]-FT[1]*FT[2]); */
+
+  if(x[0]<0.8){nonsense = 0.0;}
+  else{nonsense=1.0;}
 
   /* Step 3 Create the second piola Kirchhoff stress tensor */
   for (comp=0; comp<Ncomp; ++comp){
     for (d=0;d<dim;d++){
       for (i=0;i<dim;i++){
-        S[comp*dim+d] += traction[comp*dim+i]*FT[i*dim+d];
+        S[comp*dim+d] += traction[comp*dim+i]*FTInv[i*dim+d]/J*nonsense;
       }
     }
   }
@@ -507,17 +589,17 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (comp=0; comp<Ncomp; ++comp){
     for (d=0;d<dim;d++){
-      f0[comp]+=S[comp*dim+d]*n[d]*0;
+      f0[comp]+=S[comp*dim+d]*n[comp]*0;
       /* PetscPrintf(PETSC_COMM_WORLD,"S[%i] = %f      n[%i]  = %f \n", comp*dim+d, S[comp*dim+d],comp,n[comp]); */
     }
-    /* PetscPrintf(PETSC_COMM_WORLD,"f0[%i] = %f \n", comp, f0[comp]); */
+    /* PetscPrintf(PETSC_COMM_WORLD,"f0[%i] = %f \n", comp, f0[comp]);  */
   }
-  f0[1] =0.001;
+  f0[1] =0.06;
 }
     
 
     
-void f1_u_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+void f1_u_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
         const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
         const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
         const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
@@ -626,7 +708,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   PetscErrorCode ierr;
   options->debug = 0;
   options->runType = RUN_FULL;
-  options->dim = 2;
+  options->dim = 3;
   options->interpolate = PETSC_FALSE;
   options->simplex = PETSC_TRUE;
   options->refinementLimit = 0.0;
@@ -705,44 +787,54 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
 
   ierr = DMGetDS(dm, &prob);CHKERRQ(ierr);
 
-  /* Setting up the linear elasticity problem */
-  if (user->transient){
-    ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u_2d);CHKERRQ(ierr);
-    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
-  }
-  else if(user->ldis){
-    if(user->verbose) ierr = PetscPrintf(PETSC_COMM_WORLD,"Setting up large displacement problem\n");
-    ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_ldis);CHKERRQ(ierr);
-    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_ldis);CHKERRQ(ierr);
-  }
-  else if(user->planestress){
-    ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d_pstress);CHKERRQ(ierr);
-    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d_pstress);CHKERRQ(ierr);
-  }
-  else{
-    ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d);CHKERRQ(ierr);
-    ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
-  }
+
+  
+     /* Setting up the linear elasticity problem */
+    if (user->transient){
+      ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
+    }
+    else if(user->ldis){
+      if(user->verbose) ierr = PetscPrintf(PETSC_COMM_WORLD,"Setting up large displacement problem\n");
+      ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_ldis);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_ldis);CHKERRQ(ierr);
+    }
+    else if(user->planestress){
+      ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d_pstress);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d_pstress);CHKERRQ(ierr);
+    }
+    else{
+      if(user->dim==3){
+        ierr = PetscDSSetResidual(prob,0,f0_u,f1_u);CHKERRQ(ierr);
+        ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_3d);CHKERRQ(ierr);
+      }
+      else{
+      ierr = PetscDSSetResidual(prob,0,f0_u,f1_u);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d);CHKERRQ(ierr);
+      }
+    }
 
 
-  /* setting up the velocity field for the transient analysis */
-  if(user->transient){
-    ierr = PetscDSSetResidual(prob,1,f0_vel_2d,f1_vel_2d);CHKERRQ(ierr);
-    ierr = PetscDSSetJacobian(prob,1,1,g0_velvel_2d,NULL,NULL,NULL);CHKERRQ(ierr);
-    /* Maybe we need a dynamic jacobian? -- apparently not. */
-    ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_dyn_velu_2d,NULL,NULL,NULL);CHKERRQ(ierr);
-  }
+    /* setting up the velocity field for the transient analysis */
+    if(user->transient){
+      ierr = PetscDSSetResidual(prob,1,f0_vel_2d,f1_vel_2d);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(prob,1,1,g0_velvel_2d,NULL,NULL,NULL);CHKERRQ(ierr);
+      /* Maybe we need a dynamic jacobian? -- apparently not. */
+      ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_dyn_velu_2d,NULL,NULL,NULL);CHKERRQ(ierr);
+    }
+  
   /* Setting the Neumann Boudnary Condition */
   if (user->neumann){
     if (user->ldis){
-      ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_ldis,f1_u_bd_2d);CHKERRQ(ierr);
+      ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_ldis,f1_u_bd);CHKERRQ(ierr);
     }
     else{
-    ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_2d,f1_u_bd_2d);CHKERRQ(ierr);
-    /* ierr = PetscDSSetBdJacobian(prob,0,0,NULL,g1_uu_bd_2d,NULL,NULL);CHKERRQ(ierr); */
+      ierr = PetscDSSetBdResidual(prob,0,f0_u_bd,f1_u_bd);CHKERRQ(ierr);
+      /* ierr = PetscDSSetBdJacobian(prob,0,0,NULL,g1_uu_bd_2d,NULL,NULL);CHKERRQ(ierr); */
     }
     
   }
+
   
   ierr = PetscDSGetNumFields(prob,&NumFields);CHKERRQ(ierr);
   ierr = PetscPrintf(PETSC_COMM_WORLD,"Problem set up with %i fields\n",NumFields);CHKERRQ(ierr);
@@ -767,6 +859,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   /* Creating the FE */
   ierr = PetscFECreateDefault(dm, dim, dim, simplex,"def_",-1,&fe);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) fe, "deformation");CHKERRQ(ierr);
+  
   if(user->neumann){
     if (user->ldis) PetscPrintf(PETSC_COMM_WORLD,"Large displacement formulation has no option for neumann conditions as of yet");
     ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
@@ -794,14 +887,27 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
       ierr = PetscDSSetBdDiscretization(prob, 0, (PetscObject) fe_bd); CHKERRQ(ierr);
     }
     ierr = SetupProblem(cdm, user); CHKERRQ(ierr);
-
+    /* Define the boundaries */
+    
     const PetscInt Ncomp = dim;
-    const PetscInt components[] = {0,1};
+    PetscInt components[dim];
     const PetscInt Nfid = 1;
-    const PetscInt fid[] = {5}; /* {5}; */ 	/* The fixed faces.*/
-    const PetscInt Npid  =1;
-    const PetscInt pid[] = {4}; /* {4}; */ 	/* The pressure loaded faces */
-  
+    PetscInt d;
+    PetscInt fid[1];  /* fixed faces [numer of fixed faces] */
+    const PetscInt Npid = 1;  /* number of pressure loaded faces */
+    PetscInt pid[Npid];       /* the ids of the pressure loaded faces */
+    
+    for (d=0;d<dim;d++){
+      components[d]=d;
+    }
+    if(dim==2){
+      fid[0] = 5; /* {5}; */ 	/* The fixed faces.*/
+      pid[0] = 4; /* {4}; */ 	/* The pressure loaded faces */
+    }
+    else if(dim==3){
+      fid[0] = 6;  /* The fixed face */
+      pid[0]= 5;  /* The pressure loaded faces */
+    }
 
     ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr);
     if(user->neumann){
@@ -853,7 +959,9 @@ int main(int argc, char **argv){
 
   /* testmesh_2D_box_quad.msh */
   /* Beam_coarse.msh */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"Beam_fine.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"beam3D_normal_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
+  PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
   if (distributeddm) {
     ierr=DMDestroy(&dm);CHKERRQ(ierr);
@@ -861,7 +969,7 @@ int main(int argc, char **argv){
   }
   
   ierr = DMSetFromOptions(dm);CHKERRQ(ierr);
-  
+  ierr = DMView(dm,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
  
 
 
