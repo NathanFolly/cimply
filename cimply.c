@@ -917,8 +917,8 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
       pid[0] = 4; /* {4}; */ 	/* The pressure loaded faces */
     }
     else if(dim==3){
-      fid[0] = 6;  /* The fixed face */
-      fid[1] = 7;  /* the second fixed face */
+      fid[0] = 1;  /* The fixed face */
+      fid[1] = 20;  /* the second fixed face */
       pid[0]= 5;  /* The pressure loaded faces */
     }
 
