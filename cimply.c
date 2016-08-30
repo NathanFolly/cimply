@@ -547,6 +547,7 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   /* TODO: define the boundary residual for the large displacement formulation (should be the first piola Kirchhoff stress */
   const PetscReal mu =76.9, lbda=115.4;
   const PetscScalar traction[] = {0.0,0.0,0.0,0.01,0.0,0.0,0.0,0.0,0.0};
+  const PetscScalar trac[] = {0.0,0.01,0.0};
   PetscInt comp, d, i;
   PetscScalar F[Ncomp*dim], FInv[Ncomp*dim], S[Ncomp*dim];
   PetscReal J;
@@ -595,10 +596,11 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (comp=0; comp<Ncomp; ++comp){
     for (d=0;d<dim;d++){
-      f0[comp]+=S[comp*dim+d]*n[comp];
+      f0[comp]+=FInv[comp*dim+d]/J*n[comp];
       /* PetscPrintf(PETSC_COMM_WORLD,"S[%i] = %f      n[%i]  = %f \n", comp*dim+d, S[comp*dim+d],comp,n[comp]); */
     }
     /* PetscPrintf(PETSC_COMM_WORLD,"f0[%i] = %f \n", comp, f0[comp]);  */
+    f0[comp]*=trac[comp];
   }
   /* f0[1] =0.06; */
 }
@@ -907,7 +909,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     PetscInt pid[Npid];       /* the ids of the pressure loaded faces */
 
     PetscInt test[] = {0};
-    PetscInt testid[] = {7};
+    PetscInt testid[] = {4};
     
     for (d=0;d<dim;d++){
       components[d]=d;
@@ -918,14 +920,14 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     }
     else if(dim==3){
       fid[0] = 1;  /* The fixed face */
-      fid[1] = 20;  /* the second fixed face */
-      pid[0]= 5;  /* The pressure loaded faces */
+      fid[1] = 14;  /* the second fixed face */
+      pid[0]= 2;  /* The pressure loaded faces */
     }
 
     ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr);
     if(user->neumann){
       ierr = DMAddBoundary(cdm, PETSC_FALSE, "load", "Face Sets",0, Ncomp, components, NULL, Npid, pid, user);CHKERRQ(ierr);
-      /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "constrict", "Face Sets", 0, Ncomp, components ,(void (*)()) zero_vector, Nfid, testid, user);CHKERRQ(ierr); /\* constrict movement of roght end *\/ */
+      /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "constrict", "Face Sets", 0, 1, test ,(void (*)()) zero_scalar, Nfid, testid, user);CHKERRQ(ierr); /\* constrict movement of roght end *\/ */
     }
     else{
       ierr = DMAddBoundary(cdm, PETSC_TRUE, "load", "Face Sets", 0, Ncomp, components, (void(*)()) pull, Npid, pid, user);CHKERRQ(ierr);
@@ -973,7 +975,7 @@ int main(int argc, char **argv){
 
   /* testmesh_2D_box_quad.msh */
   /* Beam_coarse.msh */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"plate3D_normal_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"PipeEnd3D_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
