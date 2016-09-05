@@ -948,8 +948,8 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
 
 
 
-int main(int argc, char **argv){
 
+void callthis(){
   SNES snes;			/* nonlinear solver */
   DM dm, distributeddm;			/* problem definition */
   Vec u,r;			/* solution and residual vectors */
@@ -957,25 +957,16 @@ int main(int argc, char **argv){
   AppCtx user;			/* user-defined work context */
   PetscErrorCode ierr;
   PetscViewer viewer;
-  TS ts;
+  PetscInt its;
 
-
-
-
-  
-  /* Firing up Petsc */
-  ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr);
-
+ /* Firing up Petsc */
+  /* ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr); */
+  ierr = PetscInitializeFortran();CHKERRQ(ierr);
   ierr = ProcessOptions(PETSC_COMM_WORLD,&user);CHKERRQ(ierr);
-
-
-  /* ierr = CreateMesh(PETSC_COMM_WORLD,&user,&dm);CHKERRQ(ierr); */
 
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
 
-  /* testmesh_2D_box_quad.msh */
-  /* Beam_coarse.msh */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"longbeam3D_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"longbeam3D.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
@@ -987,165 +978,269 @@ int main(int argc, char **argv){
   ierr = DMSetFromOptions(dm);CHKERRQ(ierr);
   ierr = DMView(dm,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
  
-
-
-  if (user.transient){
-    Vec u_start;
-    PetscReal ftime;
-    PetscInt nsteps, its;
-    TSConvergedReason ConvergedReason;
-    PetscBool loadedspring = PETSC_FALSE;
-    
-    if (loadedspring){  /* preloading the cantilever so that I can run the TS without loading to see if the problem comes from the neumann conditions in the displacement field */
-      user.transient=PETSC_FALSE;
-      ierr = PetscPrintf(PETSC_COMM_WORLD,"Creating initial solution for loaded cantilever\n");CHKERRQ(ierr);
-      ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
-      ierr = SNESSetDM(snes,dm);CHKERRQ(ierr);
-      ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
-      ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
-      ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
-      
-      ierr = DMCreateGlobalVector(dm,&u_start);CHKERRQ(ierr);
-      ierr = VecDuplicate(u_start,&r);CHKERRQ(ierr);
-      
-      
-      ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
-      ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
-      A=J;
-
-      
-      ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
-
-      ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
-
-      ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
-      ierr = SNESSolve(snes,NULL,u_start);CHKERRQ(ierr);
-
-      ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
-      ierr = PetscPrintf(PETSC_COMM_WORLD,"Static loaded state determined. Number of snes iterations %i \n", its);CHKERRQ(ierr);
-
-      ierr = MatDestroy(&J); CHKERRQ(ierr);
-      ierr = MatDestroy(&A); CHKERRQ(ierr);
-      ierr = VecDestroy(&r); CHKERRQ(ierr);
-
-      user.transient=PETSC_TRUE;
-      user.neumann = PETSC_FALSE;
-
-    }
-    
-    
-    PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",user.time.total);
-    ierr =  TSCreate(PETSC_COMM_WORLD, &ts); CHKERRQ(ierr);
-    ierr = TSSetType(ts, TSCN); CHKERRQ(ierr);
-    ierr = TSSetDM(ts,dm); CHKERRQ(ierr);  
-    ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
-    ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
-    ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
-
-    ierr = DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, &user); CHKERRQ(ierr);
-    ierr = DMTSSetIFunctionLocal(dm, DMPlexTSComputeIFunctionFEM, &user); CHKERRQ(ierr);
-    ierr = DMTSSetIJacobianLocal(dm, DMPlexTSComputeIJacobianFEM, &user); CHKERRQ(ierr);
-
-
-    
-    ierr = DMCreateGlobalVector(dm, &u); CHKERRQ(ierr);
-
-    if (loadedspring){
-      /* setting the loaded cantilever static solution as initial condition for the transient analysis */
-      u=u_start;
-    }
-
-    ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
-    
-    ierr = TSSetDuration(ts,1000,user.time.total); CHKERRQ(ierr);
-    ierr = TSSetExactFinalTime(ts, user.time.total); CHKERRQ(ierr);
-    ierr = TSSetInitialTimeStep(ts,0.0, user.time.dt); CHKERRQ(ierr);
-    ierr = TSSetFromOptions(ts); CHKERRQ(ierr);
-
-    ierr = TSSolve(ts,NULL); CHKERRQ(ierr);
-
-    /* ierr = TSGetSolveTime(ts,&ftime); */
-    /* ierr = TSGetTimeStepNumber(ts,&nsteps); CHKERRQ(ierr); */
-    /* ierr = TSGetConvergedReason(ts,&ConvergedReason); CHKERRQ(ierr); */
-
-    ierr = TSView(ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr);
-    PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
-    /* ierr = PetscPrintf(PETSC_COMM_WORLD, "%s at time %g after %D steps \n",ConvergedReason,ftime,nsteps); CHKERRQ(ierr); */
-
-    /* Write solution to a VTK file */
-    ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
-    ierr = DMPlexVTKWriteAll((PetscObject) dm, viewer);
-    ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
-
-    ierr = TSDestroy(&ts); CHKERRQ(ierr);
-    ierr = VecDestroy(&u); CHKERRQ(ierr);
-    
-  }  
-  else{
-    PetscInt its;  /* number of iterations needed by the SNES solver */
-    ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
-    ierr = SNESSetDM(snes,dm);CHKERRQ(ierr);
-    ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
-    ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
-    ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
-    
-    ierr = DMCreateGlobalVector(dm,&u);CHKERRQ(ierr);
-    ierr = VecDuplicate(u,&r);CHKERRQ(ierr);
-    
-    ierr = VecSet(u,(PetscReal) 0.0);CHKERRQ(ierr);
-    
-    
-    ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
-    ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
-    A=J;
-    
-    ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
-    
-    ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
-
-    if (user.debug){  		/* Showing the Jacobi matrix for debugging purposes */
-      ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr);
-      ierr = MatView(A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-    }
-    
-    ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
-    
-    if (user.showInitial){ ierr = DMVecViewLocal(dm, u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr);}
-    
-    if (user.debug) {
-      ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr);
-      ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-    }
-    ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);
-    ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
-    ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr);
+  ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr);
+  ierr = SNESSetDM(snes,dm);CHKERRQ(ierr);
+  ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
+  ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
+  ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
   
-    if (user.showSolution){
-      ierr = PetscPrintf(PETSC_COMM_WORLD,"solution: \n");CHKERRQ(ierr);
-      ierr = VecChop(u, 3.0e-9); CHKERRQ(ierr); /* what does vecchop do? */
-      ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-    }
+  ierr = DMCreateGlobalVector(dm,&u);CHKERRQ(ierr);
+  ierr = VecDuplicate(u,&r);CHKERRQ(ierr);
+  
+  ierr = VecSet(u,(PetscReal) 0.0);CHKERRQ(ierr);
     
-    if (user.visualization ==SOLUTION){
-        
-      if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Creating the vtk output file... \n");
-      ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
-      ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr);
-      ierr = VecView(u,viewer);CHKERRQ(ierr);
-      ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
-      if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
-    }
-
-    ierr = VecViewFromOptions(u,NULL,"-sol_vec_view");CHKERRQ(ierr);
-
-    if ( A != J){MatDestroy(&A);}
-    MatDestroy(&J);
-    VecDestroy(&u);
-    VecDestroy(&r);
-    SNESDestroy(&snes);
+    
+  ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr);
+  ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
+  A=J;
+  
+  ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr);
+  
+  ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
+  
+  if (user.debug){  		/* Showing the Jacobi matrix for debugging purposes */
+    ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr);
+    ierr = MatView(A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
   }
-  DMDestroy(&dm);
-  PetscFinalize();
-  return 0;
+    
+  ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
   
+  if (user.showInitial){ ierr = DMVecViewLocal(dm, u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr);}
+  
+  if (user.debug) {
+    ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr);
+    ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+  }
+  ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);
+  ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
+  ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr);
+  
+  if (user.showSolution){
+    ierr = PetscPrintf(PETSC_COMM_WORLD,"solution: \n");CHKERRQ(ierr);
+    ierr = VecChop(u, 3.0e-9); CHKERRQ(ierr); /* what does vecchop do? */
+    ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+  }
+    
+  if (user.visualization ==SOLUTION){
+        
+    if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Creating the vtk output file... \n");
+    ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
+    ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr);
+    ierr = VecView(u,viewer);CHKERRQ(ierr);
+    ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
+    if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
+  }
+
+  ierr = VecViewFromOptions(u,NULL,"-sol_vec_view");CHKERRQ(ierr);
+  
+  if ( A != J){MatDestroy(&A);}
+  MatDestroy(&J);
+  VecDestroy(&u);
+  VecDestroy(&r);
+  SNESDestroy(&snes);
+  DMDestroy(&dm);
+  /* PetscFinalize(); */
 }
+
+
+/* int main(int argc, char **argv){ */
+
+/*   SNES snes;			/\* nonlinear solver *\/ */
+/*   DM dm, distributeddm;			/\* problem definition *\/ */
+/*   Vec u,r;			/\* solution and residual vectors *\/ */
+/*   Mat A,J;			/\* Jacobian Matrix *\/ */
+/*   AppCtx user;			/\* user-defined work context *\/ */
+/*   PetscErrorCode ierr; */
+/*   PetscViewer viewer; */
+/*   TS ts; */
+
+
+
+
+  
+/*   /\* Firing up Petsc *\/ */
+/*   ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr); */
+
+/*   ierr = ProcessOptions(PETSC_COMM_WORLD,&user);CHKERRQ(ierr); */
+
+
+/*   /\* ierr = CreateMesh(PETSC_COMM_WORLD,&user,&dm);CHKERRQ(ierr); *\/ */
+
+/*   /\* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) *\/ */
+
+/*   /\* testmesh_2D_box_quad.msh *\/ */
+/*   /\* Beam_coarse.msh *\/ */
+/*   ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"longbeam3D.msh", PETSC_TRUE,&dm);CHKERRQ(ierr); */
+/*   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr); */
+/*   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim); */
+/*   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr); */
+/*   if (distributeddm) { */
+/*     ierr=DMDestroy(&dm);CHKERRQ(ierr); */
+/*     dm = distributeddm; */
+/*   } */
+  
+/*   ierr = DMSetFromOptions(dm);CHKERRQ(ierr); */
+/*   ierr = DMView(dm,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr); */
+ 
+
+
+/*   if (user.transient){ */
+/*     Vec u_start; */
+/*     PetscReal ftime; */
+/*     PetscInt nsteps, its; */
+/*     TSConvergedReason ConvergedReason; */
+/*     PetscBool loadedspring = PETSC_FALSE; */
+    
+/*     if (loadedspring){  /\* preloading the cantilever so that I can run the TS without loading to see if the problem comes from the neumann conditions in the displacement field *\/ */
+/*       user.transient=PETSC_FALSE; */
+/*       ierr = PetscPrintf(PETSC_COMM_WORLD,"Creating initial solution for loaded cantilever\n");CHKERRQ(ierr); */
+/*       ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr); */
+/*       ierr = SNESSetDM(snes,dm);CHKERRQ(ierr); */
+/*       ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr); */
+/*       ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr); */
+/*       ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr); */
+      
+/*       ierr = DMCreateGlobalVector(dm,&u_start);CHKERRQ(ierr); */
+/*       ierr = VecDuplicate(u_start,&r);CHKERRQ(ierr); */
+      
+      
+/*       ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr); */
+/*       ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr); */
+/*       A=J; */
+
+      
+/*       ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr); */
+
+/*       ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr); */
+
+/*       ierr = SNESSetFromOptions(snes);CHKERRQ(ierr); */
+/*       ierr = SNESSolve(snes,NULL,u_start);CHKERRQ(ierr); */
+
+/*       ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr); */
+/*       ierr = PetscPrintf(PETSC_COMM_WORLD,"Static loaded state determined. Number of snes iterations %i \n", its);CHKERRQ(ierr); */
+
+/*       ierr = MatDestroy(&J); CHKERRQ(ierr); */
+/*       ierr = MatDestroy(&A); CHKERRQ(ierr); */
+/*       ierr = VecDestroy(&r); CHKERRQ(ierr); */
+
+/*       user.transient=PETSC_TRUE; */
+/*       user.neumann = PETSC_FALSE; */
+
+/*     } */
+    
+    
+/*     PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",user.time.total); */
+/*     ierr =  TSCreate(PETSC_COMM_WORLD, &ts); CHKERRQ(ierr); */
+/*     ierr = TSSetType(ts, TSCN); CHKERRQ(ierr); */
+/*     ierr = TSSetDM(ts,dm); CHKERRQ(ierr); */
+/*     ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr); */
+/*     ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr); */
+/*     ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr); */
+
+/*     ierr = DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, &user); CHKERRQ(ierr); */
+/*     ierr = DMTSSetIFunctionLocal(dm, DMPlexTSComputeIFunctionFEM, &user); CHKERRQ(ierr); */
+/*     ierr = DMTSSetIJacobianLocal(dm, DMPlexTSComputeIJacobianFEM, &user); CHKERRQ(ierr); */
+
+
+    
+/*     ierr = DMCreateGlobalVector(dm, &u); CHKERRQ(ierr); */
+
+/*     if (loadedspring){ */
+/*       /\* setting the loaded cantilever static solution as initial condition for the transient analysis *\/ */
+/*       u=u_start; */
+/*     } */
+
+/*     ierr = TSSetSolution(ts,u); CHKERRQ(ierr); */
+    
+/*     ierr = TSSetDuration(ts,1000,user.time.total); CHKERRQ(ierr); */
+/*     ierr = TSSetExactFinalTime(ts, user.time.total); CHKERRQ(ierr); */
+/*     ierr = TSSetInitialTimeStep(ts,0.0, user.time.dt); CHKERRQ(ierr); */
+/*     ierr = TSSetFromOptions(ts); CHKERRQ(ierr); */
+
+/*     ierr = TSSolve(ts,NULL); CHKERRQ(ierr); */
+
+/*     /\* ierr = TSGetSolveTime(ts,&ftime); *\/ */
+/*     /\* ierr = TSGetTimeStepNumber(ts,&nsteps); CHKERRQ(ierr); *\/ */
+/*     /\* ierr = TSGetConvergedReason(ts,&ConvergedReason); CHKERRQ(ierr); *\/ */
+
+/*     ierr = TSView(ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr); */
+/*     PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n"); */
+/*     /\* ierr = PetscPrintf(PETSC_COMM_WORLD, "%s at time %g after %D steps \n",ConvergedReason,ftime,nsteps); CHKERRQ(ierr); *\/ */
+
+/*     /\* Write solution to a VTK file *\/ */
+/*     ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr); */
+/*     ierr = DMPlexVTKWriteAll((PetscObject) dm, viewer); */
+/*     ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr); */
+
+/*     ierr = TSDestroy(&ts); CHKERRQ(ierr); */
+/*     ierr = VecDestroy(&u); CHKERRQ(ierr); */
+    
+/*   } */
+/*   else{ */
+/*     PetscInt its;  /\* number of iterations needed by the SNES solver *\/ */
+/*     ierr = SNESCreate(PETSC_COMM_WORLD,&snes);CHKERRQ(ierr); */
+/*     ierr = SNESSetDM(snes,dm);CHKERRQ(ierr); */
+/*     ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr); */
+/*     ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr); */
+/*     ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr); */
+    
+/*     ierr = DMCreateGlobalVector(dm,&u);CHKERRQ(ierr); */
+/*     ierr = VecDuplicate(u,&r);CHKERRQ(ierr); */
+    
+/*     ierr = VecSet(u,(PetscReal) 0.0);CHKERRQ(ierr); */
+    
+    
+/*     ierr = DMSetMatType(dm, MATAIJ);CHKERRQ(ierr); */
+/*     ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr); */
+/*     A=J; */
+    
+/*     ierr = DMPlexSetSNESLocalFEM(dm,&user,&user,&user);CHKERRQ(ierr); */
+    
+/*     ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr); */
+
+/*     if (user.debug){  		/\* Showing the Jacobi matrix for debugging purposes *\/ */
+/*       ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr); */
+/*       ierr = MatView(A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr); */
+/*     } */
+    
+/*     ierr = SNESSetFromOptions(snes);CHKERRQ(ierr); */
+    
+/*     if (user.showInitial){ ierr = DMVecViewLocal(dm, u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr);} */
+    
+/*     if (user.debug) { */
+/*       ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr); */
+/*       ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr); */
+/*     } */
+/*     ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr); */
+/*     ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr); */
+/*     ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr); */
+  
+/*     if (user.showSolution){ */
+/*       ierr = PetscPrintf(PETSC_COMM_WORLD,"solution: \n");CHKERRQ(ierr); */
+/*       ierr = VecChop(u, 3.0e-9); CHKERRQ(ierr); /\* what does vecchop do? *\/ */
+/*       ierr = VecView(u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr); */
+/*     } */
+    
+/*     if (user.visualization ==SOLUTION){ */
+        
+/*       if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Creating the vtk output file... \n"); */
+/*       ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&viewer);CHKERRQ(ierr); */
+/*       ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr); */
+/*       ierr = VecView(u,viewer);CHKERRQ(ierr); */
+/*       ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr); */
+/*       if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n"); */
+/*     } */
+
+/*     ierr = VecViewFromOptions(u,NULL,"-sol_vec_view");CHKERRQ(ierr); */
+
+/*     if ( A != J){MatDestroy(&A);} */
+/*     MatDestroy(&J); */
+/*     VecDestroy(&u); */
+/*     VecDestroy(&r); */
+/*     SNESDestroy(&snes); */
+/*   } */
+/*   DMDestroy(&dm); */
+/*   PetscFinalize(); */
+/*   return 0; */
+  
+/* } */
