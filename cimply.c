@@ -523,7 +523,7 @@ void f0_u_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   const PetscReal mu =76.923076923, lbda=115.384615385;
   const PetscScalar traction[] = {0.0, 0.01, 0.0};
   PetscInt comp;
-  const PetscReal pressure = 0.01;
+  const PetscReal pressure = 0.001;
   PetscReal nonsense;
 
   if(x[0]<0.8)nonsense=0.0;
@@ -547,7 +547,7 @@ void f0_u_bd_ldis(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   /* TODO: define the boundary residual for the large displacement formulation (should be the first piola Kirchhoff stress */
   const PetscReal mu =76.9, lbda=115.4;
   const PetscScalar traction[] = {0.0,0.0,0.0,0.01,0.0,0.0,0.0,0.0,0.0};
-  const PetscScalar trac[] = {0.0,0.01,0.0};
+  const PetscScalar trac[] = {0.0,0.001,0.0};
   PetscInt comp, d, i;
   PetscScalar F[Ncomp*dim], FInv[Ncomp*dim], S[Ncomp*dim];
   PetscReal J;
@@ -919,9 +919,9 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
       pid[0] = 4; /* {4}; */ 	/* The pressure loaded faces */
     }
     else if(dim==3){
-      fid[0] = 1;  /* The fixed face */
+      fid[0] = 6;  /* The fixed face */
       fid[1] = 14;  /* the second fixed face */
-      pid[0]= 2;  /* The pressure loaded faces */
+      pid[0]= 5;  /* The pressure loaded faces */
     }
 
     ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr);
@@ -975,7 +975,7 @@ int main(int argc, char **argv){
 
   /* testmesh_2D_box_quad.msh */
   /* Beam_coarse.msh */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"PipeEnd3D_refined_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"longbeam3D_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
