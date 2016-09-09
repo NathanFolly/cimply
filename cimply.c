@@ -975,7 +975,7 @@ int main(int argc, char **argv){
 
   /* testmesh_2D_box_quad.msh */
   /* Beam_coarse.msh */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"longbeam3D_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"plate3D_coarse_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
