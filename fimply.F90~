@@ -1,0 +1,6 @@
+program fimply
+implicit none
+
+call main()
+
+end program fimply
