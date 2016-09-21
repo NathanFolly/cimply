@@ -127,6 +127,19 @@ PetscErrorCode constrict_y(PetscInt dim, PetscReal time, const PetscReal x[], Pe
   return 0;
 }
 
+PetscErrorCode constrict_x(PetscInt dim, PetscReal time, const PetscReal x[], const PetscReal n[], PetscInt Nf, PetscScalar *u, void *ctx)
+{
+  u[0] = 0.0;
+  return 0;
+}
+
+
+PetscErrorCode constrict_z(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
+{
+  u[2] = 0.0;
+  return 0;
+}
+
 PetscErrorCode coordinates(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
 {
   const PetscInt Ncomp = dim;
@@ -907,9 +920,19 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     PetscInt fid[Nfid];  /* fixed faces [numer of fixed faces] */
     const PetscInt Npid = 1;  /* number of pressure loaded faces */
     PetscInt pid[Npid];       /* the ids of the pressure loaded faces */
+    const PetscInt Nsxid = 1; /* number of face ids for the symmetry in x
+                               * direction bc */
+    PetscInt sxid[Nsxid];
+    const PetscInt Nszid = 1;  /* Number of face ids for the symmetriy in z
+                                * direction (x-y plane) BC */
+    PetscInt szid[Nszid];
+    const PetscInt Nsyid = 1;
+    PetscInt syid[Nsyid];
 
-    PetscInt test[] = {0};
-    PetscInt testid[] = {4};
+    PetscInt restrictX[] = {0};  /* array of constricted components for the
+                                  * dmaddboundary routine */
+    PetscInt restrictZ[] = {2}; 
+    PetscInt restrictY[] = {1};
     
     for (d=0;d<dim;d++){
       components[d]=d;
@@ -919,12 +942,23 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
       pid[0] = 4; /* {4}; */ 	/* The pressure loaded faces */
     }
     else if(dim==3){
-      fid[0] = 6;  /* The fixed face */
+      fid[0] = 10;  /* The fixed face */
       fid[1] = 14;  /* the second fixed face */
-      pid[0]= 5;  /* The pressure loaded faces */
+      pid[0]= 2;  /* The pressure loaded faces */
+      sxid[0] = 4;
+      szid[0] = 3;
+      syid[0] = 1;  /*  */
     }
 
     ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr);
+    /* This part is to impose the boundary conditions related to the
+     * rotational symmetry. Currently works only with a pi/2 geometry. We
+     * impose 0 displacement in the face normal of the fundamental planes (x-y
+     * and z-y in this particular case) */
+    ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmx", "Face Sets",0,1,restrictX, (void (*)()) zero_scalar, Nsxid, sxid, user);CHKERRQ(ierr);
+    ierr = DMAddBoundary(cdm, PETSC_TRUE, "bottom", "Face Sets",0,1,restrictY, (void (*)()) zero_scalar, Nsyid, syid, user);CHKERRQ(ierr);
+    ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmz", "Face Sets",0,1,restrictZ, (void (*)()) zero_scalar, Nszid, szid, user);CHKERRQ(ierr);
+    
     if(user->neumann){
       ierr = DMAddBoundary(cdm, PETSC_FALSE, "load", "Face Sets",0, Ncomp, components, NULL, Npid, pid, user);CHKERRQ(ierr);
       /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "constrict", "Face Sets", 0, 1, test ,(void (*)()) zero_scalar, Nfid, testid, user);CHKERRQ(ierr); /\* constrict movement of roght end *\/ */
@@ -966,7 +1000,10 @@ void callthis(){
 
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
 
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"longbeam3D_prepped.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+
+
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
