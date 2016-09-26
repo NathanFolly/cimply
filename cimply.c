@@ -8,6 +8,9 @@ static char help[] = "simply FEM program. To be extended...";
 #include <petscsnes.h>
 #include <petscts.h>
 
+/* Other packages we need */
+#include <stdio.h>
+#include <string.h>
 /* user defined Application Context that helps to manage the options (or the contetext) of the program  */
 
 typedef enum {RUN_FULL, RUN_TEST} RunType;
@@ -58,6 +61,24 @@ typedef struct {
 static const PetscInt delta2D[2*2] = {1,0,0,1};
 static const PetscInt delta3D[3*3] = {1,0,0,0,1,0,0,0,1};
 
+
+/* Create a data structure for the data from SIMMER  */
+typedef struct {
+  PetscInt IB;  /* Number of cells in radial direction */
+  PetscInt JB;  /* Number of cells in vertical direction */
+  PetscInt IBP2;  /* IB plus 2 shadow cells */
+  PetscInt JBP2;  /* JB plus 2 shadow cells */
+  PetscInt MMS;   /* The total length of a K-cell scalar data array */
+  PetscReal *DRINP;  /*Array of cell heigths in radial direction  */
+  PetscReal *DZINP;  /*Array of cell heights in z direction */
+  PetscReal *PK;  /* The pressure in each K-cell */
+  
+}SimmerDataStruct;
+
+SimmerDataStruct SimmerData = {0,0,0,0,0,NULL,NULL,NULL};  /* Create an instance of SimmerData outside of
+                               * any function so that it will be globally accessible */
+
+
 PETSC_STATIC_INLINE void TensContrR44(PetscScalar C[], PetscScalar A[], PetscScalar B[], PetscInt ndim)
 {				/* Tensor contraction for two rank 4 tensors
 				   C=A:B  => C_ijkl = A_ijmn*B_nmkl*/
@@ -105,6 +126,11 @@ PETSC_STATIC_INLINE void TensContrR42(PetscScalar C[], PetscScalar A[],const  Pe
   }
 }
 
+/* Rudimentary function to map a load to a certain location on the loaded surface*/
+/* void GetSimmerLoad(const PetscReal x[], *u) */
+/* { */
+  
+/* } */
 
 
 PetscErrorCode zero_scalar(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
@@ -950,7 +976,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
       syid[0] = 1;  /*  */
     }
 
-    ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr);
+    /* ierr =  DMAddBoundary(cdm, PETSC_TRUE, "fixed", "Face Sets",0, Ncomp, components, (void (*)()) zero_vector, Nfid, fid, user);CHKERRQ(ierr); */
     /* This part is to impose the boundary conditions related to the
      * rotational symmetry. Currently works only with a pi/2 geometry. We
      * impose 0 displacement in the face normal of the fundamental planes (x-y
@@ -980,10 +1006,130 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   return(0);
 }
 
+PetscErrorCode registerSimmerData(PetscInt IB, PetscInt JB, PetscReal PK[])
+{
+  int i;
+  PetscErrorCode ierr;
+  AppCtx user;
 
+  /* We read all this from the sim05 file now */
+  
+  /* SimmerData.JB = JB; */
+  /* SimmerData.IB = IB; */
+  /* SimmerData.JBP2 = JB+2; */
+  /* SimmerData.IBP2 = IB+2; */
+  /* SimmerData.MMS = SimmerData.JBP2*SimmerData.IBP2; */
+  /* PetscPrintf(PETSC_COMM_WORLD,"MMS = %i \n",SimmerData.MMS); */
+  /* ierr = PetscFree(SimmerData.PK);CHKERRQ(ierr); */
+  /* ierr = PetscMalloc1(SimmerData.MMS, &SimmerData.PK);CHKERRQ(ierr); */
 
+  /* if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"Values at location 5 in allocated PK: %f \n",SimmerData.PK[6]); */
+  /* if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"received PK: %f \n",&PK); */
+  for (i=0;i<SimmerData.MMS;i++){
+    SimmerData.PK[i] = PK[i];
+  }
+  return(0);
+}
 
-void callthis(){
+void sim05tocimply()
+{
+
+  /* TODO: make this more robust. Likely to break if fromat of input varies. */
+  FILE *sim05;
+  char rstrng[20], valstrng[20];  /* rstrng is an actual string used to
+                                   * identify which variables is defined in
+                                   * the sim05 file
+                                   valstrng is actually a value. sometimes it
+                                   has the fortran style double notation
+                                   (2.50000D-2) which c cannot read so we
+                                   have to manipulate. Sometimes there is a multiplier*/
+  int rint;         /* The integer we read in from the file */
+  int startat, NSSize=1;      /* start point for the grid size definition,
+                                * number of cells with the same size */
+  int IBFilled=0, JBFilled=0;  /* number of cells that we have registered the
+                            * heigths for */
+  double hcell;     /* cell height */
+  int xmshread = 0;  /* 0= Tag &XMSH not encountered yet in sim05 file
+                        1= in XMSH region; next job: read number of cells in
+                        each dir
+                        2= in XMSH region; next job: read cell sizes
+                        3= completed read
+                        4= encountered &END after &XMSH before completing
+                        data read*/
+  PetscErrorCode ierr;
+  
+  sim05 = fopen("sim05","r");
+  if (sim05){
+    while(xmshread==0)
+    {
+      fscanf(sim05,"%s",rstrng);
+      if(strcmp(rstrng,"&XMSH")==0){
+        xmshread=1;
+      }
+    }
+    while(xmshread==1)
+    {
+      fscanf(sim05,"%2s %*[=] %d %*[,]",rstrng, &rint);
+      if(strcmp(rstrng,"IB")==0) SimmerData.IB=rint;
+      if(strcmp(rstrng,"JB")==0) SimmerData.JB=rint;
+      if(SimmerData.IB*SimmerData.JB!=0) xmshread=2;  /* once both variables
+                                                       * are assigned values:continue */
+    }
+    ierr = PetscMalloc1(SimmerData.IB,&SimmerData.DRINP);CHKERRQ(ierr);
+    ierr = PetscMalloc1(SimmerData.JB,&SimmerData.DZINP);CHKERRQ(ierr);
+    /* strcp(frmt, "%5c %u") */
+    while(xmshread==2)
+    {
+      int i = 0;
+      fscanf(sim05,"%5s %*[(] %d %*[)] %*[=] %19s",rstrng,&startat,valstrng);
+      NSSize=1;
+      while (valstrng[i]!='\0') 
+      {
+        if (valstrng[i]=='D') valstrng[i]='E';  /* replacing D with E so that C can read the
+                                                 * float  */
+        if (valstrng[i]=='*') NSSize=0;  /* we have more than one
+                                          * cell with the same height */
+        i++;
+      }
+      if (NSSize==0) sscanf(valstrng, "%d %*[*] %lG",&NSSize, &hcell);
+      else sscanf(valstrng, "%lG", &hcell);
+      for (i=startat-1;i<startat+NSSize-1;i++)
+      {
+        if(strcmp(rstrng,"DRINP")==0)
+        {
+          SimmerData.DRINP[i]=hcell;
+          IBFilled++;
+        }
+        if(strcmp(rstrng,"DZINP")==0)
+        {
+          SimmerData.DZINP[i]=hcell;
+          JBFilled++;
+        }
+      }
+      if ((IBFilled==SimmerData.IB)&&(JBFilled==SimmerData.JB)) xmshread=3;
+      if (strcmp(rstrng,"&END")==0) {
+        xmshread=4;
+
+      }
+    }
+      
+    /* while(xmshread==1) */
+    /* { */
+    if(xmshread==4) {
+      fprintf(stderr, "ERROR reading the meshdata from the sim05 file.\n");
+      exit(0);
+    }
+    fclose(sim05);
+  }
+  SimmerData.JBP2 = SimmerData.JB+2;
+  SimmerData.IBP2 = SimmerData.IB+2;
+  SimmerData.MMS = SimmerData.JBP2*SimmerData.IBP2;
+  ierr = PetscFree(SimmerData.PK);CHKERRQ(ierr);
+  ierr = PetscMalloc1(SimmerData.MMS, &SimmerData.PK);CHKERRQ(ierr);
+  
+}
+
+void callthis(PetscInt IB,PetscInt JB, float PK[]){
   SNES snes;			/* nonlinear solver */
   DM dm, distributeddm;			/* problem definition */
   Vec u,r;			/* solution and residual vectors */
@@ -992,18 +1138,30 @@ void callthis(){
   PetscErrorCode ierr;
   PetscViewer viewer;
   PetscInt its;
-
+  PetscInt i;
  /* Firing up Petsc */
   /* ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr); */
   ierr = PetscInitializeFortran();CHKERRQ(ierr);
   ierr = ProcessOptions(PETSC_COMM_WORLD,&user);CHKERRQ(ierr);
 
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
-
-
+  PK[5]=15.0;
+  for (i=0; i<39; i++){
+    PetscPrintf(PETSC_COMM_WORLD,"PK %i from SIMMER: %f \n",i,PK[i]);
+  }
+  
   ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
 
 
+
+  /* filling the global SimmerData structure */
+  if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"Received Data from Simmer. Creating Data Object... \n");
+  ierr = registerSimmerData(IB,JB,&PK);CHKERRQ(ierr);
+  if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"Creation of Simmer Data object successfull. \n");
+
+  if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"PK array as registered in SimmerData: %f \n",SimmerData.PK);
+
+  
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
