@@ -16,5 +16,4 @@ typedef struct {
 }SimmerDataStruct;
 
 extern SimmerDataStruct SimmerData;
-
 #endif 
