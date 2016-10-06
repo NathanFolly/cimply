@@ -504,7 +504,7 @@ void g1_uu_bd_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 }
 
 
-void f0_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+void f0_vel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
                const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
                const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
@@ -520,7 +520,7 @@ void f0_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 }
 
 
-void f1_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+void f1_vel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
                const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
                const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
@@ -536,7 +536,7 @@ void f1_vel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   }
 }
 
-void g0_velvel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+void g0_velvel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                   const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
                   const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
                   const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
@@ -551,7 +551,22 @@ void g0_velvel_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   
 }
 
-void g0_dyn_velu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+void g0_uvel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                  const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+                  const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+                  const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+                  const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+                  PetscScalar g0[]){
+  PetscInt Ncomp = dim;
+  PetscInt i;
+
+  for (i=0;i<Ncomp;i++){
+    g0[i]= -1.0;
+  }
+  
+}
+
+void g0_dyn_velu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                     const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
                     const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
                     const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
@@ -562,5 +577,39 @@ void g0_dyn_velu_2d(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (i=0;i<Ncomp;i++){
     g0[i]=1.0;
+  }
+}
+
+void f0_vel_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+        const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+        const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+        const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+        const PetscScalar a_x[], PetscReal t, const PetscReal x[], const PetscReal n[],
+        PetscScalar f1[])
+{
+  const  PetscInt Ncomp = dim;
+  PetscInt comp,d;
+  
+  for (comp=0;comp<Ncomp;++comp){
+    for (d = 0; d<dim;++d){
+      f1[comp*dim + d] = 0.0;
+    }
+  }
+}
+
+void f1_vel_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+        const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
+        const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+        const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+        const PetscScalar a_x[], PetscReal t, const PetscReal x[], const PetscReal n[],
+        PetscScalar f1[])
+{
+  const  PetscInt Ncomp = dim;
+  PetscInt comp,d;
+  
+  for (comp=0;comp<Ncomp;++comp){
+    for (d = 0; d<dim;++d){
+      f1[comp*dim + d] = 0.0;
+    }
   }
 }

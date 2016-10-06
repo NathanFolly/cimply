@@ -5,7 +5,7 @@ program fimply
 #include "petsc/finclude/petscsys.h"
 
 ! Parameters
-  integer, parameter :: NCALLS = 4  ! Number of times FEM is called
+  integer, parameter :: NCALLS = 1  ! Number of times FEM is called
   integer, parameter :: IB=1         ! [SIMMER] N_cells in radial direction
   integer, parameter :: JB=11        ! [SIMMER] N_cells in vertical direction
   integer, parameter :: IBP2=IB+2    ! [SIMMER] IB plus shadow cells
@@ -20,11 +20,12 @@ program fimply
   end interface
 
   interface
-     subroutine CimplySolve(MMS,PK, ierr) bind(c)
+     subroutine CimplySolve(MMS,PK,iter, ierr) bind(c)
        use,intrinsic :: iso_c_binding
        integer(c_int), value :: MMS
        PetscReal, Dimension(MMS) :: PK
-       PetscErrorCode :: ierr
+       integer(c_int), value :: iter
+      PetscErrorCode :: ierr
      end subroutine CimplySolve
   end interface
 
@@ -52,7 +53,7 @@ PetscErrorCode :: ierr
 
 !Since we cannot pass command line arguments in fortran we have to call the fortran version of the petscinitialize command that can cope without them. Options still can be set using an input file.
 call PetscInitialize(PETSC_NULL_CHARACTER,ierr);CHKERRQ(ierr)
-call sim05tocimply()
+!call sim05tocimply()
 
 
 
@@ -71,9 +72,9 @@ do m=1,NCALLS,1
    end do
    I=1
    do J=1,JB,1
-      PK(IBP2*J+I+1)= 0.001*m!+0.0005*J
+      PK(IBP2*J+I+1)= 1E6*m+5E5*J
    end do
-   call CimplySolve(MMS,PK,ierr);CHKERRQ(ierr);
+   call CimplySolve(MMS,PK,m,ierr);CHKERRQ(ierr);
 end do
 
 

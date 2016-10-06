@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "cimply.h"
-void sim05tocimply()
+PetscErrorCode sim05tocimply()
 {
 
   /* TODO: make this more robust. Likely to break if fromat of input varies. */
@@ -100,5 +100,6 @@ void sim05tocimply()
   SimmerData.MMS = SimmerData.JBP2*SimmerData.IBP2;
   ierr = PetscFree(SimmerData.PK);CHKERRQ(ierr);
   ierr = PetscMalloc1(SimmerData.MMS, &SimmerData.PK);CHKERRQ(ierr);
-  
+
+  return(0);
 }
