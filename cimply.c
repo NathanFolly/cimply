@@ -52,6 +52,7 @@ typedef struct {
   PetscBool planestress;  /* 2D analysis type: plane stress */
   TSctx time;
   Material_type material;
+  PetscViewer viewer;
   
 }AppCtx;
 
@@ -161,7 +162,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
 
   options->material.mu = 76.9;
   options->material.lbda = 115.4;
-  
+
 
   ierr = PetscOptionsBegin(comm,"", "Linear elasticity problem options", "DMPLEX"); CHKERRQ(ierr);
   ierr = PetscOptionsInt("-debug","The debugging level","cimply.c",options->debug, &options->debug,NULL);CHKERRQ(ierr);
@@ -211,6 +212,15 @@ PetscErrorCode DMVecViewLocal(DM dm, Vec v, PetscViewer viewer)
   PetscFunctionReturn(0);
 }
 
+PetscErrorCode Monitor(TS ts, PetscInt step, PetscReal crtime, Vec u, void *ctx)
+{
+  AppCtx *user=(AppCtx*) ctx;
+  PetscErrorCode ierr;
+
+  /* ierr = VecView(u,user->viewer);CHKERRQ(ierr); */
+  return(0);
+}
+
 
 PetscErrorCode SetupProblem(DM dm, AppCtx *user)
 {
@@ -257,7 +267,8 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
     if(user->transient){
       ierr = PetscDSSetResidual(prob,1,f0_vel,f1_vel);CHKERRQ(ierr);
       ierr = PetscDSSetJacobian(prob,1,1,g0_velvel,NULL,NULL,NULL);CHKERRQ(ierr);
-      ierr = PetscDSSetJacobian(prob,0,1,g0_uvel,NULL,NULL,NULL);CHKERRQ(ierr);
+      /* ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_velu,NULL,NULL,NULL);CHKERRQ(ierr); */
+      /* ierr = PetscDSSetDynamicJacobian(prob,0,1,g0_uvel,NULL,NULL,NULL);CHKERRQ(ierr); */
       ierr = PetscDSSetBdResidual(prob,1,f0_vel_bd,f1_vel_bd);CHKERRQ(ierr);
       /* ierr = PetscDSSetJacobian(prob,1,1,g0_velvel_2d,NULL,NULL,NULL);CHKERRQ(ierr); */
       /* Maybe we need a dynamic jacobian? -- apparently not. */
@@ -401,7 +412,10 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
 
   ierr = PetscFEDestroy(&fe); CHKERRQ(ierr);
   if (user->neumann)  ierr = PetscFEDestroy(&fe_bd); CHKERRQ(ierr);
-  if (user->transient) ierr = PetscFEDestroy(&fe_vel); CHKERRQ(ierr);
+  if (user->transient){
+    ierr = PetscFEDestroy(&fe_vel); CHKERRQ(ierr);
+    ierr = PetscFEDestroy(&fe_vel_bd);CHKERRQ(ierr);
+  }
   return(0);
 }
 
@@ -427,12 +441,16 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
   /* ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr); */
   ierr = PetscInitializeFortran();CHKERRQ(ierr);
   ierr = ProcessOptions(PETSC_COMM_WORLD,&user);CHKERRQ(ierr);
+
+  /* Creating the hdf5 viewer */
+  /* ierr = PetscViewerHDF5Open(PETSC_COMM_WORLD,"sol.h5",FILE_MODE_WRITE,&user.viewer);CHKERRQ(ierr); */
+
   
   /* Reading the sim05 file */
   ierr = sim05tocimply();CHKERRQ(ierr);
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
 
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer_coarse.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer_very_coarse.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
 
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
@@ -457,6 +475,7 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
     ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
     ierr = DMPlexCreateClosureIndex(dm,NULL);CHKERRQ(ierr);
 
+    ierr = TSMonitorSet(ts,Monitor,&user,NULL);CHKERRQ(ierr);
     ierr = DMTSSetBoundaryLocal(dm, DMPlexTSComputeBoundary, &user); CHKERRQ(ierr);
     ierr = DMTSSetIFunctionLocal(dm, DMPlexTSComputeIFunctionFEM, &user); CHKERRQ(ierr);
     ierr = DMTSSetIJacobianLocal(dm, DMPlexTSComputeIJacobianFEM, &user); CHKERRQ(ierr);
@@ -604,6 +623,7 @@ PetscErrorCode cimplyfinalize(PetscErrorCode ierr)
   if(user.transient) TSDestroy(&ts);
   if(!user.transient) SNESDestroy(&snes);
   DMDestroy(&dm);
+  PetscViewerDestroy(&user.viewer);
   return(0);
 }
 

@@ -17,7 +17,7 @@ void f0_u_transient(PetscInt dim, PetscInt Nf, PetscInt NfAux, const PetscInt uO
   const PetscInt Ncomp = dim;
   const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
   PetscInt comp;
-  for(comp=0;comp<Ncomp;comp++) f0[comp]= 0.0-rho*u_t[Ncomp+comp];
+  for(comp=0;comp<Ncomp;comp++) f0[comp]= -rho*u_t[uOff[1]+comp];
 }
 
 
@@ -513,9 +513,8 @@ void f0_vel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   const PetscInt Ncomp = dim;
   PetscInt comp;
   /* We're solving the equation vel - du/dt = 0 so: */
-
   for (comp=0;comp<Ncomp;comp++){
-    f0[comp] = u[Ncomp+comp]-u_t[comp];
+    f0[comp] = -u[uOff[1]+comp]+u_t[comp];
   }
 }
 
@@ -531,7 +530,7 @@ void f1_vel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (comp=0;comp<Ncomp;comp++){
     for (d=0;d<dim;d++){
-      f1[d*comp+d] = 0.0;
+      f1[comp*Ncomp+d] = 0.0;
     }
   }
 }
@@ -546,7 +545,7 @@ void g0_velvel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   PetscInt i;
 
   for (i=0;i<Ncomp;i++){
-    g0[i]= 1.0;
+    g0[i*Ncomp+i]= -1.0;
   }
   
 }
@@ -557,26 +556,33 @@ void g0_uvel(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                   const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
                   const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
                   PetscScalar g0[]){
+  const PetscReal rho = 7850;  /* Density of steel needed for the inertia term */
   PetscInt Ncomp = dim;
   PetscInt i;
 
   for (i=0;i<Ncomp;i++){
-    g0[i]= -1.0;
+    g0[i*Ncomp+i]= -1.0*rho;
   }
+  /* PetscPrintf(PETSC_COMM_WORLD,"t = %f\n",t); */
+  /* u_tShift = 1.0; */
   
 }
 
-void g0_dyn_velu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
-                    const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[],
-                    const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
-                    const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
-                    const PetscScalar a_x[], PetscReal t, const PetscReal x[], PetscScalar g0[]){
+void g0_velu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                  const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], 
+                  const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
+                  const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
+                  const PetscScalar a_x[], PetscReal t, PetscReal u_tShift, const PetscReal x[],
+                  PetscScalar g0[]){
 
   PetscInt Ncomp = dim;
-  PetscInt i;
+  PetscInt i,j;
 
   for (i=0;i<Ncomp;i++){
-    g0[i]=1.0;
+    /* for (j=0;j<dim;j++){ */
+    /*   g0[i*Ncomp+i]+=u_x[i*Ncomp+j];  /\* Lagrangian formulation -> substanital derivative D/Dt *\/ */
+    /* } */
+    g0[i*Ncomp+i]=1.0;
   }
 }
 
@@ -585,15 +591,13 @@ void f0_vel_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
         const PetscScalar u_t[], const PetscScalar u_x[], const PetscInt aOff[],
         const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[],
         const PetscScalar a_x[], PetscReal t, const PetscReal x[], const PetscReal n[],
-        PetscScalar f1[])
+        PetscScalar f0[])
 {
   const  PetscInt Ncomp = dim;
   PetscInt comp,d;
   
   for (comp=0;comp<Ncomp;++comp){
-    for (d = 0; d<dim;++d){
-      f1[comp*dim + d] = 0.0;
-    }
+    f0[comp] = 0.0;
   }
 }
 

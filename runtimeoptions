@@ -1,0 +1,2 @@
+./fimply -def_petscspace_order 2 -bd_def_petscspace_order 2 -vel_petscspace_order 2 -bd_vel_petscspace_order 2 -snes_monitor -snes_converged_reason -ksp_converged_reason -ksp_monitor_true_residual -ksp_type fgmres -pc_type sor -transient -ts_monitor -ts_type beuler -ksp_atol 1E-9
+
