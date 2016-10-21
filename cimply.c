@@ -1,6 +1,7 @@
 static char help[] = "simply FEM program. To be extended...";
 
 /* The PETSc packages we need: */
+#include <petscksp.h>
 #include <petscdmplex.h>
 #include <petscds.h>
 #include <petscsnes.h>
@@ -61,9 +62,10 @@ typedef struct {
  * need to create the whol FEM context from scratch every time we call the
  * Cimply solver */
 SNES snes;			/* nonlinear solver */
+KSP ksp;                        /* the linear sovler context */
 DM dm, distributeddm;			/* problem definition */
 Vec u,r;			/* solution and residual vectors */
-Mat A,J;			/* Jacobian Matrix */
+Mat A,J,P;			/* Jacobian Matrix */
 AppCtx user;			/* user-defined work context */
 PetscViewer viewer;
 TS ts;                          /* in case of transient analysis */
@@ -144,7 +146,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->debug = 0;
   options->runType = RUN_FULL;
   options->dim = 3;
-  options->interpolate = PETSC_FALSE;
+  options->interpolate = PETSC_TRUE;
   options->simplex = PETSC_TRUE;
   options->refinementLimit = 0.0;
   options->mu = 1;
@@ -156,8 +158,8 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   options->neumann = PETSC_TRUE;
   options->transient = PETSC_FALSE;
   options->ldis = PETSC_FALSE;
-  options->time.total = 3.0;
-  options->time.dt = 0.1;
+  options->time.total = 0.001;
+  options->time.dt = 0.000005;
   options->planestress = PETSC_TRUE;
 
   options->material.mu = 76.9;
@@ -216,10 +218,60 @@ PetscErrorCode Monitor(TS ts, PetscInt step, PetscReal crtime, Vec u, void *ctx)
 {
   AppCtx *user=(AppCtx*) ctx;
   PetscErrorCode ierr;
+  PetscViewer viewer;
+  char filename[50];
+  /* Vec glovec; */
+
+  /* ierr = DMGetGlobalVector(dm, &glovec);CHKERRQ(ierr); */
+  /* glovec = u; */
+  /* ierr = DMRestoreGlobalVector(dm,&glovec);CHKERRQ(ierr); */
+  sprintf(filename,"solution%i.vtu",step);
+  ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,filename,FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
+  if (user->verbose) PetscPrintf(PETSC_COMM_WORLD,"Writing the solution to the vtk file. \n");
+  /* ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr); */
+  ierr = VecView(u,viewer);CHKERRQ(ierr);
+  ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
+  if (user->verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
+
 
   /* ierr = VecView(u,user->viewer);CHKERRQ(ierr); */
+    
   return(0);
 }
+
+
+ PetscErrorCode CreateVelocityNullSpace(DM dm, AppCtx *user, Vec *v, MatNullSpace *nullSpace)
+ {
+   Vec              vec;
+   PetscErrorCode (*funcs[2])(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void* ctx) = {zero_vector, zero_vector};
+   PetscErrorCode   ierr;
+
+   DMGetGlobalVector(dm, &vec);
+   DMProjectFunction(dm, 0.0, funcs, NULL, INSERT_ALL_VALUES, vec);
+   VecNormalize(vec, NULL);
+   if (user->debug) {
+     PetscPrintf(PetscObjectComm((PetscObject)dm), "Velocity Null Space\n");
+     VecView(vec, PETSC_VIEWER_STDOUT_WORLD);
+   }
+   MatNullSpaceCreate(PetscObjectComm((PetscObject)dm), PETSC_FALSE, 1, &vec, nullSpace);
+   if (v) {
+     DMCreateGlobalVector(dm, v);
+     VecCopy(vec, *v);
+   }
+   DMRestoreGlobalVector(dm, &vec);
+   /* New style for field null spaces */
+   {
+     PetscObject  velocity;
+     MatNullSpace nullSpaceVel;
+
+     DMGetField(dm, 1, &velocity);
+     MatNullSpaceCreate(PetscObjectComm(velocity), PETSC_TRUE, 0, NULL, &nullSpaceVel);
+     PetscObjectCompose(velocity, "nullspace", (PetscObject) nullSpaceVel);
+     MatNullSpaceDestroy(&nullSpaceVel);
+   }
+ return(0);
+}
+
 
 
 PetscErrorCode SetupProblem(DM dm, AppCtx *user)
@@ -235,8 +287,8 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
   
      /* Setting up the linear elasticity problem */
     if (user->transient){
-      /* ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u);CHKERRQ(ierr); */
-      ierr = PetscDSSetResidual(prob,0,f0_u,f1_u);CHKERRQ(ierr);
+      ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u);CHKERRQ(ierr);
+      /* ierr = PetscDSSetResidual(prob,0,f0_u,f1_u);CHKERRQ(ierr); */
       ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_3d);CHKERRQ(ierr);
     }
     else if(user->ldis){
@@ -267,8 +319,9 @@ PetscErrorCode SetupProblem(DM dm, AppCtx *user)
     if(user->transient){
       ierr = PetscDSSetResidual(prob,1,f0_vel,f1_vel);CHKERRQ(ierr);
       ierr = PetscDSSetJacobian(prob,1,1,g0_velvel,NULL,NULL,NULL);CHKERRQ(ierr);
-      /* ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_velu,NULL,NULL,NULL);CHKERRQ(ierr); */
-      /* ierr = PetscDSSetDynamicJacobian(prob,0,1,g0_uvel,NULL,NULL,NULL);CHKERRQ(ierr); */
+      ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_velu,NULL,NULL,NULL);CHKERRQ(ierr);
+      /* ierr = PetscDSSetJacobian(prob,1,0,NULL,NULL,g2_velu,NULL);CHKERRQ(ierr); */
+      ierr = PetscDSSetDynamicJacobian(prob,0,1,g0_uvel,NULL,NULL,NULL);CHKERRQ(ierr);
       ierr = PetscDSSetBdResidual(prob,1,f0_vel_bd,f1_vel_bd);CHKERRQ(ierr);
       /* ierr = PetscDSSetJacobian(prob,1,1,g0_velvel_2d,NULL,NULL,NULL);CHKERRQ(ierr); */
       /* Maybe we need a dynamic jacobian? -- apparently not. */
@@ -309,15 +362,16 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   PetscSpace space;
 
   /* Creating the FE */
-  ierr = PetscFECreateDefault(dm, dim, dim, simplex,"def_",-1,&fe);CHKERRQ(ierr);
+  ierr = PetscFECreateDefault(dm, dim, dim, simplex,"def_",PETSC_DEFAULT,&fe);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) fe, "deformation");CHKERRQ(ierr);
   
   if(user->neumann){
     if (user->ldis) PetscPrintf(PETSC_COMM_WORLD,"Large displacement formulation has no option for neumann conditions as of yet");
     ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
-    ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr);
+    /* ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr); */
     /* Creating BD FE */
-    ierr = PetscFECreateDefault(dm,dim-1, dim, simplex, "bd_def_",order,&fe_bd);CHKERRQ(ierr);
+    ierr = PetscFECreateDefault(dm,dim-1, dim, simplex, "bd_def_",PETSC_DEFAULT,&fe_bd);CHKERRQ(ierr);
+    ierr = PetscFESetQuadrature(fe_bd,q);CHKERRQ(ierr);
     ierr = PetscObjectSetName((PetscObject) fe_bd, "deformation");CHKERRQ(ierr);
   }
   if(user->transient){
@@ -325,9 +379,11 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
     ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr);
     /* Creating the FE field for the velocity */
-    ierr = PetscFECreateDefault(dm,dim,dim,simplex,"vel_",order,&fe_vel);CHKERRQ(ierr);
+    ierr = PetscFECreateDefault(dm,dim,dim,simplex,"vel_",PETSC_DEFAULT,&fe_vel);CHKERRQ(ierr);
+    ierr = PetscFESetQuadrature(fe_vel,q);CHKERRQ(ierr);
     ierr = PetscObjectSetName((PetscObject) fe_vel, "velocity");CHKERRQ(ierr);
-    ierr = PetscFECreateDefault(dm,dim-1, dim, simplex, "bd_vel_",order,&fe_vel_bd);CHKERRQ(ierr);
+    ierr = PetscFECreateDefault(dm,dim-1, dim, simplex, "bd_vel_",PETSC_DEFAULT,&fe_vel_bd);CHKERRQ(ierr);
+    ierr = PetscFESetQuadrature(fe_vel_bd,q);CHKERRQ(ierr);
     ierr = PetscObjectSetName((PetscObject) fe_vel_bd, "velocity");CHKERRQ(ierr);
   }
   /* Discretization and boundary conditons: */
@@ -387,13 +443,13 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
      * impose 0 displacement in the face normal of the fundamental planes (x-y
      * and z-y in this particular case) */
     ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmx", "Face Sets",0,1,restrictX, (void (*)()) zero_scalar, Nsxid, sxid, user);CHKERRQ(ierr);
-    ierr = DMAddBoundary(cdm, PETSC_TRUE, "bottom", "Face Sets",0,1,restrictY, (void (*)()) zero_scalar, Nsyid, syid, user);CHKERRQ(ierr);
-    ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmz", "Face Sets",0,1,restrictZ, (void (*)()) zero_scalar, Nszid, szid, user);CHKERRQ(ierr);
+    ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmy", "Face Sets",0,1,restrictY, (void (*)()) zero_scalar, Nsyid, syid, user);CHKERRQ(ierr);
+    ierr = DMAddBoundary(cdm, PETSC_TRUE, "bottom", "Face Sets",0,1,restrictZ, (void (*)()) zero_scalar, Nszid, szid, user);CHKERRQ(ierr);
 
     /* Do the same thing for the velocity field */
     /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmx", "Face Sets",1,1,restrictX, (void (*)()) zero_scalar, Nsxid, sxid, user);CHKERRQ(ierr); */
-    /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "bottom", "Face Sets",1,1,restrictY, (void (*)()) zero_scalar, Nsyid, syid, user);CHKERRQ(ierr); */
-    /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmz", "Face Sets",1,1,restrictZ, (void (*)()) zero_scalar, Nszid, szid, user);CHKERRQ(ierr); */
+    /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmy", "Face Sets",1,1,restrictY, (void (*)()) zero_scalar, Nsyid, syid, user);CHKERRQ(ierr); */
+    /* ierr = DMAddBoundary(cdm, PETSC_TRUE, "bottom", "Face Sets",1,1,restrictZ, (void (*)()) zero_scalar, Nszid, szid, user);CHKERRQ(ierr); */
     
     if(user->neumann){
       ierr = DMAddBoundary(cdm, PETSC_FALSE, "load", "Face Sets",0, Ncomp, components, NULL, Npid, pid, user);CHKERRQ(ierr);
@@ -407,8 +463,34 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
 
   ierr = PetscFEGetBasisSpace(fe,&space);CHKERRQ(ierr);
   ierr = PetscSpaceGetOrder(space,&BSpaceOrder);CHKERRQ(ierr);
-    PetscPrintf(PETSC_COMM_WORLD,"The order of the basis space is %i \n", BSpaceOrder);
+  PetscPrintf(PETSC_COMM_WORLD,"The order of the basis space is %i \n", BSpaceOrder);
+
+
+  {
+    /* Set up the near null space (a.k.a. rigid body modes) that will be used
+       by the multigrid preconditioner */
     
+     /* DM           subdm; */
+     /* MatNullSpace nearNullSpace; */
+     /* PetscInt     fields = 0; */
+     /* PetscObject  deformation, velocity; */
+     /* DMCreateSubDM(dm, 1, &fields, NULL, &subdm); */
+     /* DMPlexCreateRigidBody(subdm, &nearNullSpace); */
+     /* DMGetField(dm, 0, &deformation); */
+     /* PetscObjectCompose(deformation, "nearnullspace", (PetscObject) nearNullSpace); */
+     /* DMDestroy(&subdm); */
+     /* MatNullSpaceDestroy(&nearNullSpace); */
+
+     /*  and now for the velocity */
+     /* fields = 1; */
+     /* ierr = DMCreateSubDM(dm, 1, &fields, NULL, &subdm);CHKERRQ(ierr); */
+     /* ierr = DMPlexCreateRigidBody(subdm, &nearNullSpace);CHKERRQ(ierr); */
+     /* ierr = DMGetField(dm, 1, &velocity);CHKERRQ(ierr); */
+     /* ierr = PetscObjectCompose(velocity, "nearnullspace", (PetscObject) nearNullSpace);CHKERRQ(ierr); */
+     /* ierr = DMDestroy(&subdm);CHKERRQ(ierr); */
+     /* ierr = MatNullSpaceDestroy(&nearNullSpace);CHKERRQ(ierr); */
+
+   }
 
   ierr = PetscFEDestroy(&fe); CHKERRQ(ierr);
   if (user->neumann)  ierr = PetscFEDestroy(&fe_bd); CHKERRQ(ierr);
@@ -435,8 +517,7 @@ PetscErrorCode registerSimmerData(PetscReal PK[])
 
 PetscErrorCode cimplysetup(PetscErrorCode ierr){
 
-
-  
+   
   /* Firing up Petsc */
   /* ierr= PetscInitialize(&argc, &argv,NULL,help);CHKERRQ(ierr); */
   ierr = PetscInitializeFortran();CHKERRQ(ierr);
@@ -450,7 +531,7 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
   ierr = sim05tocimply();CHKERRQ(ierr);
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
 
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer_very_coarse.msh", PETSC_TRUE,&dm);CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer_thin.msh", user.interpolate,&dm);CHKERRQ(ierr);
 
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
@@ -466,10 +547,10 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
   /* In case of a transient analysis */
   
   if (user.transient){
-    
+
     PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",user.time.total);
     ierr =  TSCreate(PETSC_COMM_WORLD, &ts); CHKERRQ(ierr);
-    ierr = TSSetType(ts, TSCN); CHKERRQ(ierr);
+    ierr = TSSetType(ts, TSBEULER); CHKERRQ(ierr);
     ierr = TSSetDM(ts,dm); CHKERRQ(ierr);
     ierr = DMSetApplicationContext(dm, &user);CHKERRQ(ierr);
     ierr = SetupDiscretization(dm,&user);CHKERRQ(ierr);
@@ -490,14 +571,23 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
     ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
     
     ierr = TSSetDuration(ts,1000,user.time.total); CHKERRQ(ierr);
-    ierr = TSSetExactFinalTime(ts, user.time.total); CHKERRQ(ierr);
+    ierr = TSSetExactFinalTime(ts, TS_EXACTFINALTIME_MATCHSTEP); CHKERRQ(ierr);
+    ierr = TSSetEquationType(ts,TS_EQ_IMPLICIT);CHKERRQ(ierr);
     ierr = TSSetInitialTimeStep(ts,0.0, user.time.dt); CHKERRQ(ierr);
     ierr = TSSetFromOptions(ts); CHKERRQ(ierr);
     ierr = TSGetSNES(ts, &snes); CHKERRQ(ierr);
+    ierr = SNESGetKSP(snes, &ksp); CHKERRQ(ierr);
 
+    /* ierr = CreateVelocityNullSpace(dm,&user,NULL,&nullspace); CHKERRQ(ierr); */
+    /* /\* ierr = KSPSetNullSpace(ksp,nullspace);CHKERRQ(ierr); *\/ */
+    /* ierr = KSPGetOperators(ksp,&A,&P);CHKERRQ(ierr); */
+    /* ierr = MatSetType(A,MATAIJ);CHKERRQ(ierr); */
+    /* ierr = MatSetNullSpace(A,nullspace); CHKERRQ(ierr); */
+    /* ierr = KSPSetOperators(ksp,A,P);CHKERRQ(ierr); */
 
+    /* ierr = MatNullSpaceDestroy(&nullspace);CHKERRQ(ierr); */
 
-    /* ierr = TSGetSolveTime(ts,&ftime); */
+      /* ierr = TSGetSolveTime(ts,&ftime); */
     /* ierr = TSGetTimeStepNumber(ts,&nsteps); CHKERRQ(ierr); */
     /* ierr = TSGetConvergedReason(ts,&ConvergedReason); CHKERRQ(ierr); */
 
