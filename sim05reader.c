@@ -18,6 +18,7 @@ PetscErrorCode sim05tocimply()
                                    (2.50000D-2) which c cannot read so we
                                    have to manipulate. Sometimes there is a multiplier*/
   int rint;         /* The integer we read in from the file */
+  PetscReal rreal;  /* The float we read in from the file */
   int startat, NSSize=1;      /* start point for the grid size definition,
                                 * number of cells with the same size */
   int IBFilled=0, JBFilled=0;  /* number of cells that we have registered the
@@ -30,6 +31,7 @@ PetscErrorCode sim05tocimply()
                         3= completed read
                         4= encountered &END after &XMSH before completing
                         data read*/
+  int xtmeread = 0;  /* Same principle as for xmshread. Just for the time context */
   PetscErrorCode ierr;
   
   sim05 = fopen("sim05","r");
@@ -91,6 +93,47 @@ PetscErrorCode sim05tocimply()
     /* { */
     if(xmshread==4) {
       fprintf(stderr, "ERROR reading the meshdata from the sim05 file.\n");
+      exit(0);
+    }
+    
+ while(xtmeread==0)
+    {
+      fscanf(sim05,"%s",rstrng);
+      if(strcmp(rstrng,"&XTME")==0){
+        xtmeread=1;
+      }
+    }
+    while(xtmeread==1)
+    {
+      /* fscanf(sim05,"%5s %*[=] %f %*s %i %*[,]",rstrng, &rreal, &power); */
+      int i =0;
+      fscanf(sim05,"%5s %*[=] %19s",rstrng,valstrng);
+      NSSize=1;
+      while (valstrng[i]!='\0') 
+      {
+        int EOFortDoub;
+        if (valstrng[i]=='D') valstrng[i]='E';  /* replacing D with E so that C can read the
+                                                 * float  */
+        if (valstrng[i]==',') EOFortDoub=1;  /* we have more than one
+                                              * cell with the same height */
+        if (EOFortDoub==1) valstrng[i] = ' ';
+        i++;
+      }
+      sscanf(valstrng, "%lG", &rreal);
+      
+      if(strcmp(rstrng,"TWFIN")==0) {
+        SimmerData.TWFIN=rreal;
+      }
+      if(SimmerData.TWFIN!=0) xtmeread=2;
+      if (strcmp(rstrng,"&END")==0) {
+        xtmeread=4;
+      }
+    }
+
+    /* while(xmshread==1) */
+    /* { */
+    if(xtmeread==4) {
+      fprintf(stderr, "ERROR reading the time data from the sim05 file.\n");
       exit(0);
     }
     fclose(sim05);

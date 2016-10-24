@@ -5,7 +5,7 @@ program fimply
 #include "petsc/finclude/petscsys.h"
 
 ! Parameters
-  integer, parameter :: NCALLS = 1  ! Number of times FEM is called
+  integer, parameter :: NCALLS = 3  ! Number of times FEM is called
   integer, parameter :: IB=1         ! [SIMMER] N_cells in radial direction
   integer, parameter :: JB=11        ! [SIMMER] N_cells in vertical direction
   integer, parameter :: IBP2=IB+2    ! [SIMMER] IB plus shadow cells
@@ -20,11 +20,12 @@ program fimply
   end interface
 
   interface
-     subroutine CimplySolve(MMS,PK,iter, ierr) bind(c)
+     subroutine CimplySolve(MMS,PK,iter,tstep, ierr) bind(c)
        use,intrinsic :: iso_c_binding
        integer(c_int), value :: MMS
        PetscReal, Dimension(MMS) :: PK
        integer(c_int), value :: iter
+       PetscReal, value :: tstep
       PetscErrorCode :: ierr
      end subroutine CimplySolve
   end interface
@@ -47,6 +48,7 @@ program fimply
 integer :: m=0,n=0                       !counter
 integer :: I=0                         !Radial position
 integer :: J=0                         !vertical position
+PetscReal :: tstep=5E-6
 PetscReal, target :: PK(MMS)  ! The k-cell pressure
 
 PetscErrorCode :: ierr
@@ -74,7 +76,7 @@ do m=1,NCALLS,1
    do J=1,JB,1
       PK(IBP2*J+I+1)= 1E6*m+5E5*J
    end do
-   call CimplySolve(MMS,PK,m,ierr);CHKERRQ(ierr);
+   call CimplySolve(MMS,PK,m,tstep,ierr);CHKERRQ(ierr);
 end do
 
 

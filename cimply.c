@@ -16,7 +16,7 @@ static char help[] = "simply FEM program. To be extended...";
 
 /* user defined Application Context that helps to manage the options (or the contetext) of the program  */
 
-typedef enum {RUN_FULL, RUN_TEST} RunType;
+typedef enum {RUN_STANDALONE, RUN_COUPLED} RunType;
 typedef enum {NONE, LABELS, BOUNDARIES, SOLUTION} Visualization;
 
 typedef struct  /* The Leapfrog timestepping context */
@@ -75,7 +75,7 @@ TS ts;                          /* in case of transient analysis */
 
 
 
-SimmerDataStruct SimmerData  = {0,0,0,0,0,NULL,NULL,NULL};  /* Create an
+SimmerDataStruct SimmerData  = {0,0,0,0,0,NULL,NULL,NULL,0};  /* Create an
                                                                instance of
                                                                SimmerData outside of
                                                                * any function
@@ -138,13 +138,13 @@ PetscErrorCode pull(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt 
 
 PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
 {
-  const char *runTypes[2]={"full","test"};
+  const char *runTypes[2]={"standalone","coupled"};
   const char *visutype[4]={"none","labels","boundaries","solution"};
   PetscInt vis;
   PetscInt run;
   PetscErrorCode ierr;
   options->debug = 0;
-  options->runType = RUN_FULL;
+  options->runType = RUN_COUPLED;
   options->dim = 3;
   options->interpolate = PETSC_TRUE;
   options->simplex = PETSC_TRUE;
@@ -169,7 +169,7 @@ PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
   ierr = PetscOptionsBegin(comm,"", "Linear elasticity problem options", "DMPLEX"); CHKERRQ(ierr);
   ierr = PetscOptionsInt("-debug","The debugging level","cimply.c",options->debug, &options->debug,NULL);CHKERRQ(ierr);
   run = options->runType;
-  ierr = PetscOptionsEList("-run-type","The run type","cimply.c",runTypes,2,runTypes[options->runType],&run,NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsEList("-run-type","The run type: standalone or coupled","cimply.c",runTypes,2,runTypes[options->runType],&run,NULL);CHKERRQ(ierr);
   
   options->runType = (RunType) run;
 
@@ -528,11 +528,11 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
 
   
   /* Reading the sim05 file */
+  if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"reading the sim05 file\n");
   ierr = sim05tocimply();CHKERRQ(ierr);
+  if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"finished reading the sim05 file\n");
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
-
   ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer_thin.msh", user.interpolate,&dm);CHKERRQ(ierr);
-
   ierr = DMGetDimension(dm,&user.dim); CHKERRQ(ierr);
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",user.dim);
   ierr = DMPlexDistribute(dm,0,NULL,&distributeddm); CHKERRQ(ierr);
@@ -569,6 +569,8 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
 
 
     ierr = TSSetSolution(ts,u); CHKERRQ(ierr);
+
+    user.time.total = SimmerData.TWFIN;
     
     ierr = TSSetDuration(ts,1000,user.time.total); CHKERRQ(ierr);
     ierr = TSSetExactFinalTime(ts, TS_EXACTFINALTIME_MATCHSTEP); CHKERRQ(ierr);
@@ -631,7 +633,7 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
   }
   return(0);
 }
-PetscErrorCode cimplysolve(int MMS, PetscReal  PK[],int iter, PetscErrorCode ierr){
+PetscErrorCode cimplysolve(int MMS, PetscReal  PK[],int iter,PetscReal tstep, PetscErrorCode ierr){
 
   PetscInt its;
   PetscInt i;
@@ -677,9 +679,16 @@ PetscErrorCode cimplysolve(int MMS, PetscReal  PK[],int iter, PetscErrorCode ier
   if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"PK array as registered in SimmerData: %f \n",SimmerData.PK);
 
   if (user.transient){
-    ierr = TSSolve(ts,NULL); CHKERRQ(ierr);
-    ierr = TSView(ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr);
-    PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
+
+    if(user.runType==RUN_STANDALONE){
+      ierr = TSSolve(ts,NULL); CHKERRQ(ierr);
+      ierr = TSView(ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr);
+      PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
+    }
+    if(user.runType==RUN_COUPLED){
+      ierr = TSSetTimeStep(ts,tstep);
+      ierr = TSStep(ts);
+    }
   }
   else{
     ierr = SNESSolve(snes,NULL,u);CHKERRQ(ierr);

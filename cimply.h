@@ -12,7 +12,7 @@ typedef struct {
   PetscReal *DRINP;  /*Array of cell heigths in radial direction  */
   PetscReal *DZINP;  /*Array of cell heights in z direction */
   PetscReal *PK;  /* The pressure in each K-cell */
-  
+  PetscReal TWFIN; /* The total time of the analysis */
 }SimmerDataStruct;
 
 extern SimmerDataStruct SimmerData;
