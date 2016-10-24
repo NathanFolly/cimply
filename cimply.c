@@ -686,8 +686,17 @@ PetscErrorCode cimplysolve(int MMS, PetscReal  PK[],int iter,PetscReal tstep, Pe
       PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
     }
     if(user.runType==RUN_COUPLED){
+      char filename[50];
       ierr = TSSetTimeStep(ts,tstep);
       ierr = TSStep(ts);
+
+      sprintf(filename,"solution%i.vtu",iter);
+      ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,filename,FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
+      if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"Writing the solution to the vtk file. \n");
+      /* ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr); */
+      ierr = VecView(u,viewer);CHKERRQ(ierr);
+      ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
+      if (user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
     }
   }
   else{
