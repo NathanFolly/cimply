@@ -4,8 +4,8 @@
 #include <petscsys.h>
 #include <stdio.h>
 #include <string.h>
-#include "cimply.h"
-PetscErrorCode sim05tocimply()
+#include "cimplySimmerUtils.h"
+PetscErrorCode sim05tocimply(SimmerData SiDat)
 {
 
   /* TODO: make this more robust. Likely to break if fromat of input varies. */
@@ -46,13 +46,13 @@ PetscErrorCode sim05tocimply()
     while(xmshread==1)
     {
       fscanf(sim05,"%2s %*[=] %d %*[,]",rstrng, &rint);
-      if(strcmp(rstrng,"IB")==0) SimmerData.IB=rint;
-      if(strcmp(rstrng,"JB")==0) SimmerData.JB=rint;
-      if(SimmerData.IB*SimmerData.JB!=0) xmshread=2;  /* once both variables
+      if(strcmp(rstrng,"IB")==0) SiDat.IB=rint;
+      if(strcmp(rstrng,"JB")==0) SiDat.JB=rint;
+      if(SiDat.IB*SiDat.JB!=0) xmshread=2;  /* once both variables
                                                        * are assigned values:continue */
     }
-    ierr = PetscMalloc1(SimmerData.IB,&SimmerData.DRINP);CHKERRQ(ierr);
-    ierr = PetscMalloc1(SimmerData.JB,&SimmerData.DZINP);CHKERRQ(ierr);
+    ierr = PetscMalloc1(SiDat.IB,&SiDat.DRINP);CHKERRQ(ierr);
+    ierr = PetscMalloc1(SiDat.JB,&SiDat.DZINP);CHKERRQ(ierr);
     /* strcp(frmt, "%5c %u") */
     while(xmshread==2)
     {
@@ -73,16 +73,16 @@ PetscErrorCode sim05tocimply()
       {
         if(strcmp(rstrng,"DRINP")==0)
         {
-          SimmerData.DRINP[i]=hcell;
+          SiDat.DRINP[i]=hcell;
           IBFilled++;
         }
         if(strcmp(rstrng,"DZINP")==0)
         {
-          SimmerData.DZINP[i]=hcell;
+          SiDat.DZINP[i]=hcell;
           JBFilled++;
         }
       }
-      if ((IBFilled==SimmerData.IB)&&(JBFilled==SimmerData.JB)) xmshread=3;
+      if ((IBFilled==SiDat.IB)&&(JBFilled==SiDat.JB)) xmshread=3;
       if (strcmp(rstrng,"&END")==0) {
         xmshread=4;
 
@@ -122,9 +122,9 @@ PetscErrorCode sim05tocimply()
       sscanf(valstrng, "%lG", &rreal);
       
       if(strcmp(rstrng,"TWFIN")==0) {
-        SimmerData.TWFIN=rreal;
+        SiDat.TWFIN=rreal;
       }
-      if(SimmerData.TWFIN!=0) xtmeread=2;
+      if(SiDat.TWFIN!=0) xtmeread=2;
       if (strcmp(rstrng,"&END")==0) {
         xtmeread=4;
       }
@@ -138,11 +138,11 @@ PetscErrorCode sim05tocimply()
     }
     fclose(sim05);
   }
-  SimmerData.JBP2 = SimmerData.JB+2;
-  SimmerData.IBP2 = SimmerData.IB+2;
-  SimmerData.MMS = SimmerData.JBP2*SimmerData.IBP2;
-  ierr = PetscFree(SimmerData.PK);CHKERRQ(ierr);
-  ierr = PetscMalloc1(SimmerData.MMS, &SimmerData.PK);CHKERRQ(ierr);
+  SiDat.JBP2 = SiDat.JB+2;
+  SiDat.IBP2 = SiDat.IB+2;
+  SiDat.MMS = SiDat.JBP2*SiDat.IBP2;
+  ierr = PetscFree(SiDat.PK);CHKERRQ(ierr);
+  ierr = PetscMalloc1(SiDat.MMS, &SiDat.PK);CHKERRQ(ierr);
 
   return(0);
 }

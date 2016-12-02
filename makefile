@@ -17,4 +17,6 @@ cimply: cimply.o chkopts
 	-${CLINKER} -o cimply cimply.o ${PETSC_LIB}
 	${RM} cimply.o
 
-
+phcelltest: phcelltest.o phantomcell.o
+	-${CLINKER} -o phcelltest phcelltest.o phantomcell.o ${PETSC_LIB}
+	${RM} phcelltest.o phantomcell.o

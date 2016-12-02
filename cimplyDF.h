@@ -377,6 +377,7 @@ void f0_u_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                 const PetscScalar a_x[], PetscReal t, const PetscReal x[], const PetscReal n[],
                 PetscScalar f0[])
 {
+  extern SimmerData SiDat;
   const PetscInt Ncomp=dim;
   /* Setting  the surface traction tensor eqal to the external load acting on the boundary in question  */
 
@@ -386,7 +387,7 @@ void f0_u_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   /* get the pressure from the Simmer data according to the location of the
    * boundary element */
-  getSimmerPressure(x,&pressure);
+  getSimmerPressure(SiDat,x,&pressure);
   for (comp=0; comp<Ncomp; ++comp){
     f0[comp] = pressure*n[comp];
   }

@@ -11,7 +11,7 @@ static char help[] = "simply FEM program. To be extended...";
 /* Other packages we need */
 #include <stdio.h>
 #include <string.h>
-#include "cimplySimmerUtils.h"
+#include "cimply.h"
 #include "cimplyDF.h"
 
 /* user defined Application Context that helps to manage the options (or the contetext) of the program  */
@@ -503,7 +503,7 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   return(0);
 }
 
-PetscErrorCode registerSimmerData(PetscReal PK[])
+PetscErrorCode registerSimmerData(SimmerData SiDat PetscReal PK[])
 {
   int i;
   PetscErrorCode ierr;
@@ -534,7 +534,7 @@ PetscErrorCode cimplysetup(PetscErrorCode ierr){
   
   /* Reading the sim05 file */
   if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"reading the sim05 file\n");
-  ierr = sim05tocimply(SiDat);CHKERRQ(ierr);
+  ierr = sim05tocimply();CHKERRQ(ierr);
   if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"finished reading the sim05 file\n");
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
   ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,"SHammer_thin_fine.msh", user.interpolate,&dm);CHKERRQ(ierr);
@@ -675,7 +675,7 @@ PetscErrorCode cimplysolve(int MMS, PetscReal  PK[],int iter,PetscReal tstep, Pe
   
   /* filling the global SimmerData structure */
   if (user.verbose) PetscPrintf(PETSC_COMM_WORLD,"Received Data from Simmer. Creating cimply PK array... \n");
-  ierr = registerSimmerData(PK);CHKERRQ(ierr);
+  ierr = registerSiDat(PK);CHKERRQ(ierr);
   if (user.verbose) {
     PetscPrintf(PETSC_COMM_WORLD,"Creation of Simmer Data object successfull. \n");
     for (i=0;i<MMS;i++){
