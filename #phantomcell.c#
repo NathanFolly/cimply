@@ -12,24 +12,29 @@ static void * PhantomCell_ctor(void * _self, va_list *app ){
   /* phantom cells are in a linked list. If the SIMMER cell in question is
    * already a phantom cell, we don't create a new phantomcell but instead up the
    * count of the existing one
+
    call: new(PhantomCell,struct PhantomCell * partof, PetscReal RLB,
    PetscReal RUB, PetscReal ZLB, PetscReal ZUB)
-   partof: collection this PhantomCell bekongs to
+   
+   partof: collection this PhantomCell belongs to
    RLB: Radial lower boundary of the cell
    RUB: radial upper boundary of the cell
    ZLB: Z-direction lower boundary of the cell
    ZUB: Z-direction upper boundary of the cell
   */
+
+  
   const struct PhantomCell * ring = va_arg(*app, struct PhantomCell *);
   if(ring){
     struct PhantomCell * b = ring;
-    const PetscReal RLB= va_arg(*app, PetscReal);  /* arguments passed to the
-                                                    * creator of the phantom
-                                                    * cells are the cell boundaries*/
-    const PetscInt SimmerCellNr = node->inSimmerCell;
+    const PetscReal RLB = va_arg(*app, PetscReal);
+    const PetscReal RUB = va_arg(*app, PetscReal);
+    const PetscReal ZLB = va_arg(*app, PetscReal);
+    const PetscReal ZUB = va_arg(*app, PetscReal);
+    
     while(b->next!=ring){
       b=b->next;
-      if(SimmerCellNr==b->SimmerCellNr){
+      if(RLB==b->RLB && RUB==b->RUB && ZLB==b->ZLB && ZUB==b->ZUB){
         ++b->count;
         free(self);
         return 0;
