@@ -12,35 +12,170 @@ static void * PhantomCell_ctor(void * _self, va_list *app ){
   /* phantom cells are in a linked list. If the SIMMER cell in question is
    * already a phantom cell, we don't create a new phantomcell but instead up the
    * count of the existing one
+
    call: new(PhantomCell,struct PhantomCell * partof, PetscReal RLB,
    PetscReal RUB, PetscReal ZLB, PetscReal ZUB)
-   partof: collection this PhantomCell bekongs to
+   
+   partof: collection this PhantomCell belongs to
    RLB: Radial lower boundary of the cell
    RUB: radial upper boundary of the cell
    ZLB: Z-direction lower boundary of the cell
    ZUB: Z-direction upper boundary of the cell
   */
+
+  
   const struct PhantomCell * ring = va_arg(*app, struct PhantomCell *);
   if(ring){
     struct PhantomCell * b = ring;
-    const PetscReal RLB= va_arg(*app, PetscReal);  /* arguments passed to the
-                                                    * creator of the phantom
-                                                    * cells are the cell boundaries*/
-    const PetscInt SimmerCellNr = node->inSimmerCell;
+    const PetscReal RLB = va_arg(*app, PetscReal);
+    const PetscReal RUB = va_arg(*app, PetscReal);
+    const PetscReal ZLB = va_arg(*app, PetscReal);
+    const PetscReal ZUB = va_arg(*app, PetscReal);
+    
     while(b->next!=ring){
       b=b->next;
-      if(SimmerCellNr==b->SimmerCellNr){
+      if(RLB==b->RLB && RUB==b->RUB && ZLB==b->ZLB && ZUB==b->ZUB){
         ++b->count;
         free(self);
-        return 0;
+        return b;
       }
     }
   }
+  else{
+    ring = self;
+  }
+  self->next = ring->next, ring->next=self;
+  self->ring = ring;
+  self->count = 1;
 }
 
+static void * PhantomCell_dtor(void * _self){
+  struct PhantomCell *self = _self;
+  struct PhantomCell *ring = self->ring;
+  -- self->count;
+  if (self->count > 0){
+    return 0;
+  }
+  assert(ring);
+  if(ring==self){
+    ring = self->next;
+  }
+  if(ring==self){
+    ring=NULL;
+  }
+  else{
+    struct PhantomCell *b= ring;
+    while(b->next!=self){
+      b=b->next;
+      assert(b!=ring);
+    }
+    b->next=self->next;
+  }
+
+  if(self->nodes){  /* deleting all the nodepointers from the phantomcell */
+    struct Node node=self->nodes;
+    struct Node nextnode = node->next;
+    printf("WARNING:: deleting PhantomCell with nodes in it. Those nodes will be lost forever. Hope you know what you\'re doing \n");
+    while (node){
+      nextnode = node->next;
+      delete(node);
+      node=nextnode;
+    }
+  }
+  if(self->subcells){  /* deleting all Phatom Subcells */
+    struct PhantomCell * subcell = self->subcells;
+    struct PhantomCell * nextsubcell = subcell->next;
+    while (subcell){
+      nextsubcell = subcell->next;
+      delete(subcell);
+      subcell = nextsubcell;
+    }
+  }
+  return self;
+}
+
+static void * PhantomCell_diff(const void *_self, const void * _b){
+  const struct PhantomCell * self = _self;
+  const struct PhantomCell * b = _b;
+
+  if(self==b) return 0;
+  return 1;
+}
+
+static void * PhantomCell_clone(const void * _self){
+  const struct PhantomCell * self = _self;
+  ++ self->count;
+  return self;
+}
+
+static const struct Class _PhantomCell{sizeof(struct PhantomCell), PhantomCell_ctor, PhantomCell_dtor, PhantomCell_clone, PhantomCell_diff};
+
+const void * PhatomCell = & _PhantomCell;
 
 
 
+/* ---------------Nodes---------------------------- */
+
+static void * Node_ctor(void * _self, va_list * app){
+  struct Node * self = _self;
+
+  const PetscReal CoordsUndef[3];
+  CoordsUndef[0] = va_arg(*app, PetscReal);
+  CoordsUndef[1] = va_arg(*app, PetscReal);
+  CoordsUndef[2] = va_arg(*app, PetscReal);
+
+  self->findCell(self);
+  /* could put a check if the node already exists. if yes it would be in the
+   * same cell */
+  return self;
+}
+
+static void * Node_dtor(void * _self){
+  struct Node *self = _self;
+  struct Node * ring = self->HomeCell->nodes;
+  assert(ring);
+  if(ring==self){
+    ring=ring->next;
+  }
+  if(ring==self){
+    ring=NULL;
+  }
+  else{
+    struct Node *b = ring;
+    while (b->next!=self){
+      b=b->next;
+      assert(b!=ring);
+    }
+    b->next = self->next;
+  }
+  return self;
+}
+
+static void * Node_diff(const void * _self, const void * _b){
+  const struct Node * self = _self;
+  const struct Node * b = _b;
+  const PetscReal eps = 10E-9;
+  PetscInt i;
+  for(i=0;i<3;i++){
+    if(fabs(self->CoordsUndef[i]-b->CoordsUndef[i])>eps){
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void * Node_clone(const void * _self){
+  struct Node *self = _self;
+  printf("WARNING:: You should not clone nodes. They are unique.")
+  return self;
+}
+
+static const struct Class _Node{sizeof(struct Node), Node_ctor, Node_dtor,Node_clone, Node_diff};
+
+const void * Node = &_Node;
+  
+    
+  
 
 /* PhantomCell * new_PhantomCell(PetscInt SimmerCellNr,DM ParentDM, PetscInt NIBNodes){ */
 /*   PhantomCell *PhC= calloc(1,sizeof(PhantomCell)); */

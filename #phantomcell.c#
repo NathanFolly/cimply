@@ -37,15 +37,92 @@ static void * PhantomCell_ctor(void * _self, va_list *app ){
       if(RLB==b->RLB && RUB==b->RUB && ZLB==b->ZLB && ZUB==b->ZUB){
         ++b->count;
         free(self);
-        return 0;
+        return b;
       }
     }
   }
+  else{
+    ring = self;
+  }
+  self->next = ring->next, ring->next=self;
+  self->ring = ring;
+  self->count = 1;
 }
 
+static void * PhantomCell_dtor(void * _self){
+  struct PhantomCell *self = _self;
+  struct PhantomCell *ring = self->ring;
+  -- self->count;
+  if (self->count > 0){
+    return 0;
+  }
+  assert(ring);
+  if(ring==self){
+    ring = self->next;
+  }
+  if(ring==self){
+    ring=NULL;
+  }
+  else{
+    struct PhantomCell *b= ring;
+    while(b->next!=self){
+      b=b->next;
+      assert(b!=ring);
+    }
+    b->next=self->next;
+  }
+
+  if(self->nodes){  /* deleting all the nodepointers from the phantomcell */
+    struct Node node=self->nodes;
+    struct Node nextnode = node->next;
+    printf("WARNING:: deleting PhantomCell with nodes in it. Those nodes will be lost forever. Hope you know what you\'re doing \n");
+    while (node){
+      nextnode = node->next;
+      delete(node);
+      node=nextnode;
+    }
+  }
+  if(self->subcells){  /* deleting all Phatom Subcells */
+    struct PhantomCell * subcell = self->subcells;
+    struct PhantomCell * nextsubcell = subcell->next;
+    while (subcell){
+      nextsubcell = subcell->next;
+      delete(subcell);
+      subcell = nextsubcell;
+    }
+  }
+  return self;
+}
+
+static void * PhantomCell_diff(const void *_self, const void * _b){
+  const struct PhantomCell * self = _self;
+  const struct PhantomCell * b = _b;
+
+  if(self==b) return 0;
+  return 1;
+}
+
+static void * PhantomCell_clone(const void * _self){
+  const struct PhantomCell * self = _self;
+  ++ self->count;
+  return self;
+}
+
+static const struct Class _PhantomCell{sizeof(struct PhantomCell), PhantomCell_ctor, PhantomCell_dtor, PhantomCell_clone, PhantomCell_diff};
+
+const void * PhantomCell = & _PhantomCell;
 
 
 
+static void PhantomCell_calculatePhantomFraction(void * _self){
+  struct PhantomCell * self = _self;
+  if(!coordinates){
+    printf("Should create a vector of node coordinates now. \n");
+  }
+  /* run  */
+}
+
+  
 
 /* PhantomCell * new_PhantomCell(PetscInt SimmerCellNr,DM ParentDM, PetscInt NIBNodes){ */
 /*   PhantomCell *PhC= calloc(1,sizeof(PhantomCell)); */

@@ -24,3 +24,7 @@ phcelltest: phcelltest.o phantomcell.o cimplyobjects.o
 ooctest: ooctest.o phantomcell.o cimplyobjects.o testobject.o
 	-${CLINKER} -o ooctest ooctest.o phantomcell.o cimplyobjects.o testobject.o ${PETSC_LIB}
 	${RM} ooctest.o phantomcell.o cimplyobjects.o testobject.o
+
+interfacetest: interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.o
+	-${CLINKER} -o interfacetest interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.o ${PETSC_LIB}
+	${RM} cimplyobjects.o interface.o simmsh.o femanalysis.o

@@ -7,7 +7,10 @@
 struct PhantomCell{
   const void * class;  /* must be the first attribute of all objects */
   /* The count attribute allows us to just reduce the count of the element in on set and delete the element only once the counter reaches zero */
-  struct PhantomCell * next;
+  struct PhantomCell * next;  /* nect phantomcell in ring */
+  struct PhantomCell * ring;  /* ring this phantomcell belongs to (highest
+                               * level PC are = SimmerCells, then first level
+                               * of subcells ...) */
   unsigned count;         /* number of times this object was added to a set (=
                            * number of interface nodes in this cell) */
   PetscInt SimmerCellNr;  /* The number of the phantom cell according to
@@ -19,13 +22,16 @@ struct PhantomCell{
                                 * cell */
   PetscReal PhantomFraction;  /* The volume fraction that is occupied by the
                                * phantom material, ergo not part of the CFD domain */
-  struct Node *nodes;  /* nodes inside the phantomcell */
+  struct nodenbr *nodes;  /* nodes inside the phantomcell */
   struct PhantomCell * subcells;  /* subcells of the phantom cell */
 
 
   PetscReal (*getPhantomFraction)(void * _self);  /* function pointer to
-                                                        * calculate the
+                                                        * return the
                                                         * phantom fraction */
+  void (* calculatePhantomFraction)(void * _self);                 /* calculate
+                                                                    * the
+                                                                    * phantom fraction */
   void (*subdivide)(void * _self, PetscReal Rpos, PetscReal Zpos);  /* to
                                                                      * subdivide
                                                                      * the
@@ -38,18 +44,11 @@ struct PhantomCell{
 };
 
 
-struct Node{
-  const void * class;  /* must be first attribute of all objects */
-  const PetscInt DMNodeNbr;  /* number of this done in the DMPLEX numbering
-                              * scheme */
-  const struct Node * neighbours;  /* neighbouring nodes */
-  const PetscReal CoordsUndef[3];  /* undeformed coordinates of the node */
-  PetscReal CoordsDef[3];
-  PetscInt inSimmerCell;
-
-  void (* updateCoords)(void * _self);
+struct  nodenbr{  /* for linked list of nodes that belong to the respective phantomcell */
+  const PetscInt Nodenumber;
+  struct nodenbr * next;
 };
-  
+
 static struct PhantomCell * Mothercells;
 
 
