@@ -5,14 +5,15 @@
 #include <stdio.h>
 
 static void * Interface_getPhantomFractions(void * _self, float ** PhantomFractions);
+static void * Interface_prepare(void * _self);
+static void * Interface_assign(void * _self, void * _b);
 
 static void * Interface_ctor(void * _self, va_list * app){
   struct Interface * self = _self;
 
-  /* temporary:: create Simmesh object for test purposes  */
-  self->SIMMsh = new(SIMMsh);
   self->getPhantomFractions = Interface_getPhantomFractions;
-  /* end of temporary solution */
+  self->prepare = Interface_prepare;
+  self->assign = Interface_assign;
   
   return self;
 }
@@ -36,15 +37,35 @@ static void * Interface_update(void * _self){
   update(self->SIMMsh);
 }
 
-void * assign(void * _self,void * _b){
+static const struct Class _Interface = {sizeof(struct Interface), Interface_ctor, Interface_dtor, Interface_update};
+
+const void * Interface = &_Interface;
+/* ------------------- End of Class definition ------------- */
+
+
+
+
+
+
+
+
+/* -------------------- Class specific functions: ---------- */
+
+static void * Interface_assign(void * _self,void * _b){
   struct Interface * self = _self;
+  const struct Class ** cp = _self;
   const struct Class ** b = _b;  /* class pointerpointer (first element in every class) */
+  assert(*cp = Interface);
   if(*b == FEMAnalysis){         /* check if second argument has correct class */
     struct FEMAnalysis * FEM = _b;
     self->FEM = FEM;
   }
+  else if(*b == SimmerAnalysis){
+    struct SimmerAnalysis * simmeranalysis =_b;
+    self->simmeranalysis = simmeranalysis;
+  }
   else{
-    fprintf(stderr,"Second input argument: unsupported format. Expected FEMAnalysis. \n");
+    fprintf(stderr,"Second input argument: unsupported format. Expected FEMAnalysis or simmeranalysis. \n");
   }
   return 0;
 }
@@ -68,13 +89,12 @@ void * pull(void * _self) {
   return 0;
 }
 
-void * prepare(void * _self) {
+static void * Interface_prepare(void * _self) {
   struct Interface * self = _self;
   assert(self->class==Interface);
-  printf("preparing. \n");
+  printf("preparing the interface... \n");
+  self->SIMMsh=new(SIMMsh);  /* creating a ne simmermesh */
+  prepare(self->SIMMsh);     /* preparing the new simmermesh */
   return 0;
 }
 
-static const struct Class _Interface = {sizeof(struct Interface), Interface_ctor, Interface_dtor, Interface_update};
-
-const void * Interface = &_Interface;

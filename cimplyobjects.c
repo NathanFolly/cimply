@@ -3,6 +3,12 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "interface.h"
+#include "simmsh.h"
+#include "femanalysis.h"
+#include "geometry.h"
+#include "phantomcell.h"
+#include "boundaryvertex.h"
 
 void * new(const void * _class, ...){
   const struct Class * class = _class;
@@ -75,9 +81,76 @@ void * getPhantomFractions(void * _self, float ** PhantomFractions){
       self->getPhantomFractions(self, PhantomFractions);
     } */
   else{
-    fprintf(stderr, "ERROR:: error in getPhantomFractions. First Argument not of expected type. Expected interface, SIMMsh or phantomCell.");
+    fprintf(stderr, "ERROR:: error in getPhantomFractions. First Argument not of expected type. Expected interface, SIMMsh or phantomCell.\n");
   }
 
   return 0;
       
+}
+
+/* the function prepare is defined for interfaces, simmermeshes*/
+
+void * prepare(void * _self){
+  const struct Class ** cp = _self;
+  if(*cp == Interface){
+    struct Interface * self = _self;
+    self->prepare(self);
+  }
+  else if(*cp == SIMMsh){
+    struct SIMMsh * self = _self;
+    self->prepare(self);
+  }
+  else if(*cp == PhantomCell){
+    struct PhantomCell * self = _self;
+    self->prepare(self);
+  }
+  else{
+    fprintf(stderr, "ERROR:: error in prepare. Argument not of expected class (Interface, Simmermesh).\n");
+    return 0;
+  }
+  return 0;
+}
+
+/* the function getposition is defined for all objects of the superclass
+ * geometry (Cells, Vertices). getposition(const void * geometryobject, float *
+ * position ,const char coordinatesystem)
+  geometryobject -- the object we want the current position of (vcenter of
+ volume position for non-vertex objects)
+  position -- the pointer to the position vector. will be allocated according
+ to the number of spatial dimensions related to the object
+  coordinatesystem : "cart" / "cylind" -- type of coordinates the vector will
+ be given in*/
+
+
+
+void * getposition(const void * _self, float ** position, const char * coordsystem){
+  const struct Geometry * self = _self;
+  self->getposition((void * )self, position, coordsystem);
+  return 0;
+}
+
+
+
+void * assign(void * _self,void * _b){
+  const struct Class ** cp = _self;
+  if(*cp == Interface){
+    struct Interface * self = _self;
+    self->assign(_self,_b);
+  }
+  else if (*cp == PhantomCell){
+    struct PhantomCell * self = _self;
+    self->assign(_self, _b);
+  }
+  else{
+    fprintf(stderr,"ERROR:: error in assign, first argument not of expected type (interface or phantomcell)\n");
+  }
+    return 0;
+}
+
+float phantomfraction(void * _self){
+  struct PhantomCell * self = _self;
+  float pfrac=0;
+  self->givePhantomFraction(self, &pfrac);
+
+  return pfrac;
 }

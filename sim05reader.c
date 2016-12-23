@@ -8,7 +8,7 @@
 PetscErrorCode sim05tocimply(SimmerData SiDat)
 {
 
-  /* TODO: make this more robust. Likely to break if fromat of input varies. */
+  /* TODO: make this more robust. Likely to break if format of input varies. */
   FILE *sim05;
   char rstrng[20], valstrng[20];  /* rstrng is an actual string used to
                                    * identify which variables is defined in

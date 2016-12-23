@@ -1,69 +1,62 @@
-#include "simmsh.h"
+#include "simmeranalysis.h"
 #include <stdio.h>
 #include <string.h>
-#include <petscsys.h>
 
-static void * SIMMsh_getPhantomFractions(void * _self, float ** PhantomFractions);
-static void * SIMMsh_prepare(void * _self);
+static void * readfromsim05file(void * _self);
 
-static void * SIMMsh_ctor(void * _self, va_list * app){
-  struct SIMMsh * self = _self;
-  self->IB = 0;
-  self->JB = 0;
-  self->IBP2 = 0;
-  self->JBP2 = 0;
-  self->MMS = 0;
-  self->DRINP = NULL;
-  self->DZINP = NULL;
-  /*TODO: these two shouldn't be in SIMMER mesh */
-  self->PK = NULL;  /* 1 */
-  self->TWFIN = 0;  /* 2 */
-  /*                                            */
-  self->getPhantomFractions = SIMMsh_getPhantomFractions;
-  self->prepare = SIMMsh_prepare;
-  return self;
-}
-
-static void * SIMMsh_dtor(void * _self){
-  struct SIMMsh * self = _self;
-
-  return self;
-}
-
-
-static void * SIMMsh_update(void * _self){
-  struct SIMMsh * self = _self;
-}
-
-
-
-static const struct Class _SIMMsh = {sizeof(struct SIMMsh), SIMMsh_ctor, SIMMsh_dtor, SIMMsh_update};
-
-const void * SIMMsh = &_SIMMsh;
-
-
-
-
-
-static void * SIMMsh_getPhantomFractions(void * _self, float ** PhantomFractions){
-  struct SIMMsh * self = _self;
-  int i, ncells=10;  /* test purposes */
+static void * SimmerAnalysis_ctor(void * _self, va_list * app){
+  struct SimmerAnalysis * self = _self;
+  /* intializing the variables */
+  self->PK = NULL;
+  /* reading the sim05 file */
+  readfromsim05file(self);
+  /* allocating the correct size of the variable vectors */
+  self->PK = (double *) calloc(self->MMS, sizeof(double));
   
-  *PhantomFractions = (float *) calloc(ncells,sizeof(float));
-  for(i=0;i<ncells;i++){
-    /* temporary: code for test purposes */
-    (*PhantomFractions)[i]= 5;
-    /* end of temporary code */
+  return self;
+}
+
+static void * SimmerAnalysis_dtor(void * _self){
+  struct SimmerAnalysis * self = _self;
+  if(self->DRINP){
+    free(self->DRINP);
   }
+  if(self->DZINP){
+    free(self->DZINP);
+  }
+  if(self->PK){
+    free(self->PK);
+  }
+  return self;
+}
+
+static void * SimmerAnalysis_update(void * _self){
+  struct SimmerAnalysis * self = _self;
+  /* TODO: what shoudl this do? */
   return 0;
 }
 
+static const struct Class _SimmerAnalysis = {sizeof(struct SimmerAnalysis),SimmerAnalysis_ctor,SimmerAnalysis_dtor, SimmerAnalysis_update};
+
+const void * SimmerAnalysis = &_SimmerAnalysis;
 
 
 
-static void * SIMMsh_prepare(void * _self){
-  struct SIMMsh * self = _self;
 
+
+
+
+
+
+
+/*-------------- reader for the sim05 file ----------- */
+
+
+static void * readfromsim05file(void * _self){
+
+  struct SimmerAnalysis * self = _self;
+
+  
   /* basically copied from sim05reader */
   /* TODO: make this more robust. Likely to break if format of input varies. */
   /* TODO: introduce simmerdata class. put TWFIN and PK etc there. simmerdata should have a simmermesh class object as attribute */
@@ -89,9 +82,18 @@ static void * SIMMsh_prepare(void * _self){
                         3= completed read
                         4= encountered &END after &XMSH before completing
                         data read*/
-  int xtmeread = 0;  /* Same principle as for xmshread. Just for the time context */
-  PetscErrorCode ierr;
+  int xtmeread = 0;  /* Same principle as for xmshread. Just for the time
+                      * context */
+  PetscInt IB;
+  PetscInt JB;
+  PetscInt IBP2;
+  PetscInt JBP2;
+  PetscInt MMS;
+  PetscReal * DRINP;
+  PetscReal * DZINP;
+  PetscReal TWFIN;
   
+  PetscErrorCode ierr;
   sim05 = fopen("sim05","r");
   if (sim05){
     while(xmshread==0)
@@ -109,8 +111,8 @@ static void * SIMMsh_prepare(void * _self){
       if(self->IB*self->JB!=0) xmshread=2;  /* once both variables
                                                        * are assigned values:continue */
     }
-    ierr = PetscMalloc1(self->IB,&self->DRINP);CHKERRQ(ierr);
-    ierr = PetscMalloc1(self->JB,&self->DZINP);CHKERRQ(ierr);
+    self->DRINP = (double *) calloc(self->IB, sizeof(double));
+    self->DZINP = (double *) calloc(self->JB, sizeof(double));
     /* strcp(frmt, "%5c %u") */
     while(xmshread==2)
     {
@@ -199,10 +201,8 @@ static void * SIMMsh_prepare(void * _self){
   self->JBP2 = self->JB+2;
   self->IBP2 = self->IB+2;
   self->MMS = self->JBP2*self->IBP2;
-  ierr = PetscFree(self->PK);CHKERRQ(ierr);
-  ierr = PetscMalloc1(self->MMS, &self->PK);CHKERRQ(ierr);
+  free(self->PK);
 
   return 0;
-  
+ 
 }
-  

@@ -27,7 +27,6 @@ void update(void * self);
 /* int differ(void * self, void * b); */
 
 float phantomfraction(void * _self);
-float testfunction(void);
     
 
 #endif

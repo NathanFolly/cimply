@@ -25,6 +25,10 @@ ooctest: ooctest.o phantomcell.o cimplyobjects.o testobject.o
 	-${CLINKER} -o ooctest ooctest.o phantomcell.o cimplyobjects.o testobject.o ${PETSC_LIB}
 	${RM} ooctest.o phantomcell.o cimplyobjects.o testobject.o
 
-interfacetest: interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.o
-	-${CLINKER} -o interfacetest interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.o ${PETSC_LIB}
-	${RM} cimplyobjects.o interface.o simmsh.o femanalysis.o
+interfacetest: interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.o simmeranalysis.o
+	-${CLINKER} -o interfacetest interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.o simmeranalysis.o ${PETSC_LIB}
+	${RM} cimplyobjects.o interface.o simmsh.o femanalysis.o simmeranalyis.o
+
+boundaryvertextest: boundaryvertextest.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
+	-${CLINKER} -o boundaryvertextest boundaryvertextest.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o ${PETSC_LIB}
+	${RM} boundaryvertextest.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
