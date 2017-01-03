@@ -30,7 +30,7 @@ struct FEMAnalysis{
 
   void * (* getPhantomFractions) (void * _self, float * PhantomFractions);
   void * (* settimestep) (void * _self, double dt);
-  void * (* assignfsinterface) (void * _self, char * interfacename);
+  void * (* selectfsinterface) (void * _self, const char interfacename[], const PetscInt interfacelabelid);
 };
 
 extern const void * FEMAnalysis;

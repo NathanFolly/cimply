@@ -1,5 +1,7 @@
 #include "femanalysis.h"
 
+static void * FEMAnalysis_selectfsinterface(void * _self, const char interfacename[], const PetscInt interfacelabelid);
+
 static void * FEMAnalysis_settimestep(void * _self, PetscReal dt);
 
 static PetscErrorCode SetupProblem(DM dm, AppCtx *user);
@@ -38,6 +40,7 @@ static void * FEMAnalysis_ctor(void * _self, va_list * app){
   PetscErrorCode ierr;
   
   self->user->time->iter=0;
+  self->selectfsinterface = FEMAnalysis_selectfsinterface;
   self->settimestep=FEMAnalysis_settimestep;
   
   meshfilename = va_arg(*app, char *);
@@ -123,6 +126,28 @@ const void * FEMAnalysis = &_FEMAnalysis;
 
 
 /* ---------------------------- class specific functions  -------------------- */
+
+
+static void * FEMAnalysis_selectfsinterface(void * _self, const char interfacename[], const PetscInt interfacelabelid){
+  struct FEMAnalysis * self = _self;
+  PetscErrorCode ierr;
+
+  ierr =   makeBoundaryLabel(self->dm, interfacename, interfacelabelid, "fsinterface");CHKERRQ(ierr);
+
+  return 0;
+}
+
+void * selectfsinterface(void * _self, const char interfacename[], const PetscInt interfacelabelid){
+  struct Class ** cp = _self;
+  if(*cp != FEMAnalysis){
+    fprintf(stderr,"ERROR:: error in selectfsinterface: the first argument is not of type FEMAnalysis.\n");
+    return 0;
+  }
+  struct FEMAnalysis * self = _self;
+  self->selectfsinterface(self,interfacename,interfacelabelid);
+  return 0;
+}
+
 
 
 static void * FEMAnalysis_settimestep(void * _self, PetscReal dt){
