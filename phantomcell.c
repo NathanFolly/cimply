@@ -5,6 +5,7 @@
 /* #include <petscdmplex.h> */
 #include "phantomcell.h"
 #include "cimplySimmerUtils.h"
+#include <math.h>
 
 static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self);
 static void PhantomCell_addvertex(void * _self, void * _boundaryvertex);
@@ -28,7 +29,7 @@ static void * PhantomCell_ctor(void * _self, va_list *app ){
   self->ZLB = va_arg(*app, double);
   self->ZUB = va_arg(*app, double);
 
-  self->cellvolume=(self->RUB*self->RUB - self->RLB*self->RLB)*(self->ZUB-self->ZLB);
+  self->cellvolume=M_PI*(pow(self->RUB,2)-pow(self->RLB,2))*(self->ZUB-self->ZLB);
       
   self->prepare=PhantomCell_prepare;
   self->calculatePhantomFraction = PhantomCell_calculatePhantomFraction_rectangleslabs;
@@ -83,37 +84,39 @@ static void PhantomCell_givePhantomFraction(void * _self, float *  phantomfracti
 
 static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self){
   struct PhantomCell * self = _self;
-  if(!self->vertexring){
-    fprintf(stderr,"ERROR:: error calculating the phantom fractions. Cell has no vertices appointed to it \n");
-  }
   struct BoundaryVertex * boundaryvertex;
   struct Node * node=self->vertexring;
   float * position;
   float rmax, zmax;  /* the maximum radial and vertical vertex positions encountered so far */
-  float reductionvolume;  /* volume by which the phantomvolume is reduced*/
+  float reductionvolume=0;  /* volume by which the phantomvolume is reduced*/
   int i=0;
-  
+
+    if(!self->vertexring){
+    /* fprintf(stderr,"ERROR:: error calculating the phantom fractions. Cell has no vertices appointed to it \n"); */
+    reductionvolume=0.0;
+  }
+
   while(node){
     /* TODO: this is ugly. there must be a better solution to this */
     float rclosest=self->RLB, zclosest=self->ZLB;  /* r- and z- positions of closest subsquares */
     boundaryvertex =(struct BoundaryVertex *) node->content;
     getposition(boundaryvertex,&position,"cylind");
-    struct Node * historynode=self->vertexring;
+     struct Node * historynode=self->vertexring;
     while(historynode!=node){
       float * historyposition;
       float rdist, zdist;
       getposition(historynode->content, &historyposition, "cylind");
       rdist = position[0]-historyposition[0];
       zdist = position[2]-historyposition[2];
-      if(rdist>0&&rdist<position[0]-rclosest){
+      if(rdist>0&&rdist<(position[0]-rclosest)){
         rclosest = historyposition[0];
       }
-      if(zdist>0&&zdist<position[2]-zclosest){
+      if(zdist>0&&zdist<(position[2]-zclosest)){
         zclosest = historyposition[2];
       }
       historynode=historynode->next;
     }
-    reductionvolume += (position[0]*position[0]-rclosest*rclosest)*(position[2]-zclosest);
+    reductionvolume += M_PI*(pow(position[0],2)-pow(rclosest,2))*(position[2]-zclosest);
     
     node = node->next;
     i++;

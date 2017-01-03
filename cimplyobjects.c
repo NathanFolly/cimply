@@ -70,8 +70,8 @@ void * getPhantomFractions(void * _self, float ** PhantomFractions){
     assert(self->getPhantomFractions);
     self->getPhantomFractions(self, PhantomFractions);
   }
-  else if(*cp==SIMMsh){
-    struct SIMMsh * self= _self;
+  else if(*cp==PhantomMesh){
+    struct PhantomMesh * self= _self;
     assert(self->getPhantomFractions);
     self->getPhantomFractions(self, PhantomFractions);
   }
@@ -81,7 +81,7 @@ void * getPhantomFractions(void * _self, float ** PhantomFractions){
       self->getPhantomFractions(self, PhantomFractions);
     } */
   else{
-    fprintf(stderr, "ERROR:: error in getPhantomFractions. First Argument not of expected type. Expected interface, SIMMsh or phantomCell.\n");
+    fprintf(stderr, "ERROR:: error in getPhantomFractions. First Argument not of expected type. Expected interface, PhantomMesh or phantomCell.\n");
   }
 
   return 0;
@@ -153,4 +153,15 @@ float phantomfraction(void * _self){
   self->givePhantomFraction(self, &pfrac);
 
   return pfrac;
+}
+
+void * generateTestSphere(void * _self, float radius, int nvertices){
+  const struct Class ** cp = _self;
+  if(*cp!=Interface){
+    fprintf(stderr,"ERROR:: error in generateTestSphere. First argument not of type Interface.\n");
+    return 0;
+  }
+  struct Interface * self = _self;
+  self->phantommesh->generateTestSphere(self->phantommesh, radius , nvertices);
+  return 0;
 }

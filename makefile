@@ -32,3 +32,7 @@ interfacetest: interfacetest.o cimplyobjects.o interface.o simmsh.o femanalysis.
 boundaryvertextest: boundaryvertextest.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
 	-${CLINKER} -o boundaryvertextest boundaryvertextest.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o ${PETSC_LIB}
 	${RM} boundaryvertextest.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
+
+phantommeshtest: phantommeshtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
+	-${CLINKER} -o phantommeshtest phantommeshtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o ${PETSC_LIB}
+	${RM} phantommeshtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o

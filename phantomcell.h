@@ -5,7 +5,7 @@
 #include "cimplyobjects.h"
 
 struct PhantomCell{
-  const struct Class * class; /* part of Geometry superclass */
+  const struct Class * class; /* first argument of any object */
   /* The count attribute allows us to just reduce the count of the element in on set and delete the element only once the counter reaches zero */
   unsigned vertexcount;               /* number of vertices in this phantomcell*/
   PetscReal RLB, RUB, ZLB, ZUB;  /* The cell boundaries (radius upper/lower;

@@ -1,0 +1,81 @@
+START : Waterhammer problem as proposed by Koji Morita. Remodelled for Simmer S3V3F by Maximilian Hartig
+
+ &XCNTL
+! This option is no longer used:  ALGOPT(21) = 1,
+  HMTOPT(31) = 1,
+  HMTOPT(61) = 1,
+ &END
+
+ &XMSH
+  IB=1,JB=11,
+  DRINP(1) = 2.50000D-2,
+  DZINP(1) = 11*5.00000D-2,
+  NREG=2,
+ &END
+
+ &XTME
+  TWFIN=5.0D-4, DTSTRT=5.0D-7,
+  DTMIN=1.0D-7, DTMAX=1.0D-6,
+  NDT0=100, TCPU=100000.0,
+ &END
+
+ &XRGN
+  LRGN=1,
+  ILB=1,IUB=1,JLB=1,JUB=1,
+  ALMINB(3)= 0.00000D+0,
+  TLMINB(3)= 7.00000D+2,
+  TGINB    = 7.00000D+2,
+  VINB(2)  = 5.00000D+0, 5.00000D+0,
+ &END
+
+ &XRGN
+  LRGN=2,
+  ILB=1, IUB=1, JLB=2, JUB=11,
+  ALMINB(3) = 1.00000D+0,
+  TLMINB(3) = 7.00000D+2,
+  TGINB     = 7.00000D+2,
+  VINB(2)   = 5.00000D+0, 5.00000D+0,
+ &END
+
+ &XBND
+  NBC=0,
+  LBCSET(1)= 0, 1, 0,
+             33*0,
+             0, 0, 0,
+ &END
+
+ &XBND
+  NBC  = 1,
+  LBCS = 2,
+  LBCP = 0,
+  LBCV = 0,
+ &END
+
+ &XEDT
+  PRTC = 1000000, PPFC = 1, DMPC=1000000,
+  NPAGE = 20,
+  PPGRP(29)  = 1,1,
+  LPRGN(10)  = 0,0,1,0,0,0,1,1,0,0,
+  LPRGN(70)  = 0,0,1,0,0,0,1,0,0,0,
+  LPRGN(90)  = 0,0,0,0,0,0,0,1,1,0,
+!The following section (SN) was introduced in order to have a visual output for verification purposes:  
+  SN='ALPSK1','ALPSK2','ALPSK3','ALPSK4','ALPSK5','ALPSK6',
+     'ALPSK7','ALPSK8','ALPSK9','ALPLK1','ALPLK2','ALPLK3',
+     'ALPLK4','ALPLK5','ALPLK6','ALPGK','ALPINK',
+     'ALPNFK1','ALPNFK2','ALPNFK3','DHK',
+     'PK','PGMK1','PGMK2','PGMK3','PGMK4',
+     'RBSK1','RBSK2','RBSK3','RBSK4','RBSK5','RBSK6',
+     'RBSK7','RBSK8','RBSK9','RBSK10','RBSK11','RBSK12',
+     'RBLK1','RBLK2','RBLK3','RBLK4','RBLK5','RBLK6',
+     'RBLK7','RBLK8','RBLK9','RBLK10','RBIK1','RBIK2',
+     'RBGK1','RBGK2','RBGK3','RBGK4','RBGK5',
+     'TSK1','TSK2','TSK3','TSK4','TSK5','TSK6',
+     'TSK7','TSK8','TSK9','TIPINK',
+     'TLK1','TLK2','TLK3','TLK4','TLK5','TLK6','TGK',
+ &END
+
+ &XMSC
+  OPTPIT =10,
+  G      = 0.0D+0,
+ &END
+

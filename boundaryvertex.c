@@ -4,6 +4,8 @@
 #include <math.h>
 
 static void * BoundaryVertex_getposition(const void * _self, float ** position, const char * coordinatesystem);
+static void * BoundaryVertex_updateposition(void * self, const float * coords);
+
 
 static void * BoundaryVertex_ctor(void * _self, va_list * app){
   struct Geometry * self = _self;
@@ -13,6 +15,7 @@ static void * BoundaryVertex_ctor(void * _self, va_list * app){
   self->currentposition[2] = va_arg(*app, double);
 
   self->getposition=BoundaryVertex_getposition;
+  self->updateposition = BoundaryVertex_updateposition;
 
   (struct BoundaryVertex *) self;
   return self;
@@ -32,6 +35,7 @@ static const struct Class _BoundaryVertex = {sizeof(struct BoundaryVertex), Boun
 
 const void * BoundaryVertex = &_BoundaryVertex;
 
+/*  ------------------------ class specific functions ----------------------------*/
 
 static void * BoundaryVertex_getposition(const void * _self, float ** position, const char * coordinatesystem){
   /* phi = 0 is the x-z plane, phi in radians */
@@ -51,4 +55,13 @@ static void * BoundaryVertex_getposition(const void * _self, float ** position, 
   }
   return 0;
 }
+
+
+void * BoundaryVertex_updateposition(void * self, const float * coords){
+  struct BoundaryVertex * self = _self;
+  self->currentposition = coords;
+
+  return 0;
+}
+
 

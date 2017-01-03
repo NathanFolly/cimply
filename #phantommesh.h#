@@ -24,6 +24,10 @@ struct PhantomMesh{
   void ** phantomcell;
   void ** boundary;
 
+  DM * dmptr;  /* the Petsc DM this phantom mesh is associated with */
+  void * sltnptr;  /* pointer to the solution of the FEM analysis */
+  
+
   void * (* getPhantomFractions)(void * _self, float ** phantomfractions);
   void * (* generateTestSphere)(void * _self, float radius, int nvertices);
   

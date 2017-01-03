@@ -2,17 +2,39 @@
 #define FEMANALYSIS_H
 
 #include "cimplyobjects.h"
+#include "femapplicationcontext.h"
+#include <petscdm.h>
+#include <petscdmlabel.h>
+#include <petscds.h>
+#include <petscdmplex.h>
+#include <petscksp.h>
+#include <petscsnes.h>
+#include <petscts.h>
 
 
 struct FEMAnalysis{
   const struct Class * class;  /* first attribute of all objects (and classes) */
-  const char * somestring;   /* just for test purposes */
-  int updatecounter;     /* just for test purposes */
+
+  SNES snes;			/* nonlinear solver */
+  KSP ksp;                        /* the linear sovler context */
+  DM dm, distributeddm;			/* problem definition */
+  Vec u,r;			/* solution and residual vectors */
+  Mat A,J,P;			/* Jacobian Matrix */
+  AppCtx user;			/* user-defined work context */
+  PetscViewer viewer;
+  TS ts;                          /* in case of transient analysis */
+  int dim;                        /* dimension of the anlysis */
+
+  const char * immersedboundaryname;   /**/
 
 
   void * (* getPhantomFractions) (void * _self, float * PhantomFractions);
+  void * (* settimestep) (void * _self, double dt);
+  void * (* assignfsinterface) (void * _self, char * interfacename);
 };
 
 extern const void * FEMAnalysis;
+
+void * (* settimestep) (void * _self, double dt);
 
 #endif

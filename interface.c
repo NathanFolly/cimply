@@ -11,9 +11,12 @@ static void * Interface_assign(void * _self, void * _b);
 static void * Interface_ctor(void * _self, va_list * app){
   struct Interface * self = _self;
 
+  self->phantommesh = new(PhantomMesh);
+
   self->getPhantomFractions = Interface_getPhantomFractions;
   self->prepare = Interface_prepare;
   self->assign = Interface_assign;
+  
   
   return self;
 }
@@ -28,13 +31,17 @@ static void * Interface_dtor(void * _self){
 
 static void * Interface_update(void * _self){
   struct Interface * self = _self;
-  assert(self->FEM);
-  update(self->FEM);
-  if(!self->SIMMsh){
-    fprintf(stderr,"ERROR :: Interface has no SIMMER Mesh assigned to it yet\n");
-    return 0;
+  if(self->FEM){
+    assert(self->FEM);
+    update(self->FEM);
   }
-  update(self->SIMMsh);
+  /* if(!self->SIMMsh){ */
+  /*   fprintf(stderr,"ERROR :: Interface has no SIMMER Mesh assigned to it yet\n"); */
+  /*   return 0; */
+  /* } */
+  /* update(self->SIMMsh); */
+  update(self->phantommesh);
+  return 0;
 }
 
 static const struct Class _Interface = {sizeof(struct Interface), Interface_ctor, Interface_dtor, Interface_update};
@@ -63,6 +70,14 @@ static void * Interface_assign(void * _self,void * _b){
   else if(*b == SimmerAnalysis){
     struct SimmerAnalysis * simmeranalysis =_b;
     self->simmeranalysis = simmeranalysis;
+    /* TODO: this does not confirm to the concept of information hiding. better create a simmermesh object that both other objects share or functions to assign meshes to objects */
+    assert(self->phantommesh);
+    self->phantommesh->DRINP = self->simmeranalysis->DRINP;
+    self->phantommesh->DZINP = self->simmeranalysis->DZINP;
+    self->phantommesh->MMS = self->simmeranalysis->MMS;
+    self->phantommesh->JB = self->simmeranalysis->JB;
+    self->phantommesh->IB = self->simmeranalysis->IB;
+    self->phantommesh->phantomcell = (void **) calloc(self->phantommesh->MMS,sizeof(void *));
   }
   else{
     fprintf(stderr,"Second input argument: unsupported format. Expected FEMAnalysis or simmeranalysis. \n");
@@ -74,13 +89,13 @@ static void * Interface_assign(void * _self,void * _b){
 /* this is ugly. we should be able to call getPhantomFractions on interfaces, SimmerMeshes and PhantomCells. like this it is only possible for interfaces*/
 static void * Interface_getPhantomFractions(void * _self, float ** PhantomFractions){
  const struct Interface * self = _self;
- if(!self->SIMMsh){
+ if(!self->phantommesh){
    fprintf(stderr,"ERROR :: Interface has no SIMMER Mesh assigned to it yet\n");
    return 0;
  }
- struct SIMMsh * sm = self->SIMMsh;
+ struct PhantomMesh * phantommesh = self->phantommesh;
   assert(self->class==Interface);
-  getPhantomFractions(sm,PhantomFractions);
+  getPhantomFractions(phantommesh,PhantomFractions);
   return 0;
 }
 
