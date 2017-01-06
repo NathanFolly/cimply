@@ -124,10 +124,19 @@ void * prepare(void * _self){
 
 
 void * getposition(const void * _self, float ** position, const char * coordsystem){
-  const struct Geometry * self = _self;
+  const struct BoundaryVertex * self = _self;
   self->getposition((void * )self, position, coordsystem);
   return 0;
 }
+
+void * updateposition(void * _self, const float * coords)
+{
+  struct BoundaryVertex * self = _self;
+  assert(self->updateposition);
+  self->updateposition(self, coords);
+  return 0;
+}
+      
 
 
 

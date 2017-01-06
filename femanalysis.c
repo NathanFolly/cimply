@@ -8,13 +8,15 @@ static PetscErrorCode SetupProblem(DM dm, AppCtx *user);
 
 static PetscErrorCode SetupDiscretization(DM dm, AppCtx *user);
 
-static PetscErrorCode Monitor(TS ts, PetscInt step, PetscReal crtime, Vec u, void *ctx)
+static PetscErrorCode Monitor(TS ts, PetscInt step, PetscReal crtime, Vec u, void *ctx);
 
-static void * setuptransient(void * _self);
+static PetscErrorCode setuptransient(void * _self);
 
-static void * setupstationary(void * _self);
+static PetscErrorCode setupstationary(void * _self);
 
 static PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options);
+
+static PetscErrorCode zero_scalar(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx);
 
 static PetscErrorCode zero_vector(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx);
 
@@ -32,25 +34,25 @@ static PetscErrorCode pull(PetscInt dim, PetscReal time, const PetscReal x[], Pe
 
 static void * FEMAnalysis_ctor(void * _self, va_list * app){
   struct FEMAnalysis * self = _self;
-  char meshfilename[51];
+  char * meshfilename;
   double endtime = 0.0;
   PetscPartitioner part;
   PetscMPIInt rank, numProcs;
   DM distributeddm;
   PetscErrorCode ierr;
   
-  self->user->time->iter=0;
+  self->user.time.iter=0;
   self->selectfsinterface = FEMAnalysis_selectfsinterface;
   self->settimestep=FEMAnalysis_settimestep;
   
   meshfilename = va_arg(*app, char *);
   endtime = va_arg(*app, double);
-  self->user->time->total = endtime;
+  self->user.time.total = endtime;
 
-  ierr = ProcessOptions(PETSC_COMM_WORLD,&(self->user));CHKERRQ(ierr);
+  ierr = ProcessOptions(PETSC_COMM_WORLD,&(self->user));
   /* importing the gmsh file. Take note that only simplices give meaningful results in 2D at the moment (For which ever reasons) */
-  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,meshfilename, PETSC_TRUE,&(self->dm));CHKERRQ(ierr);
-  ierr = DMGetDimension(self->dm,&(self->dim)); CHKERRQ(ierr);
+  ierr = DMPlexCreateFromFile(PETSC_COMM_WORLD,meshfilename, PETSC_TRUE,&(self->dm));
+  ierr = DMGetDimension(self->dm,&(self->dim));
   PetscPrintf(PETSC_COMM_WORLD,"The problem dimension is %i \n",self->dim);
 
   /* distribute the mesh */
@@ -59,23 +61,34 @@ static void * FEMAnalysis_ctor(void * _self, va_list * app){
   DMPlexGetPartitioner(self->dm, &part);
   PetscPartitionerSetType(part, PETSCPARTITIONERPARMETIS);
   /* PetscPartitionerShellSetPartition(part, numProcs, NULL, NULL); */
-  ierr = DMPlexDistribute(self->dm,0,NULL,&distributeddm); CHKERRQ(ierr);
+  ierr = DMPlexDistribute(self->dm,0,NULL,&distributeddm); 
   if (distributeddm) {
-    ierr=DMDestroy(&(self->dm));CHKERRQ(ierr);
+    ierr=DMDestroy(&(self->dm));
     self->dm = distributeddm;
     ierr = DMDestroy(&distributeddm);
   } 
   /* ierr = DMSetFromOptions(dm);CHKERRQ(ierr); */
-  ierr = DMView(dm,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+  ierr = DMView(self->dm,PETSC_VIEWER_STDOUT_WORLD);
 
-  if(self->user->transient) setuptransient(self);
-  else setupstationary(self);
+  if(self->user.transient) ierr=setuptransient(self);
+  else{
+    ierr=setupstationary(self);
+  }
 
   return self;
 }
 
 static void * FEMAnalysis_dtor(void * _self){
   struct FEMAnalysis * self = _self;
+
+  MatDestroy(&(self->J));
+  VecDestroy(&(self->u));
+  VecDestroy(&(self->r));
+  if(self->user.transient) TSDestroy(&(self->ts));
+  if(!self->user.transient) SNESDestroy(&(self->snes));
+  DMDestroy(&(self->dm));
+  PetscViewerDestroy(&(self->user.viewer));
+  
   return self;
   /* TODO: clean up the whole petsc junk to avoid memory leaks */
 }
@@ -84,26 +97,26 @@ static void * FEMAnalysis_update(void * _self){
   struct FEMAnalysis * self = _self;
   PetscErrorCode ierr;
 
-   if (self->user->transient){
+   if (self->user.transient){
 
-    if(self->user->runType==RUN_STANDALONE){
+    if(self->user.runType==RUN_STANDALONE){
       ierr = TSSolve(self->ts,NULL); CHKERRQ(ierr);
       ierr = TSView(self->ts,PETSC_VIEWER_STDOUT_WORLD); CHKERRQ(ierr);
       PetscPrintf(PETSC_COMM_WORLD,"Transient analysis finished. \n");
     }
-    if(self->user->runType==RUN_COUPLED){
+    if(self->user.runType==RUN_COUPLED){
       char filename[50];
-      ierr = TSSetTimeStep(self->ts,self->user->time->dt);
+      ierr = TSSetTimeStep(self->ts,self->user.time.dt);
       ierr = TSStep(self->ts);
 
-      sprintf(filename,"solution%i.vtu",self->user->time->iter);
+      sprintf(filename,"solution%i.vtu",self->user.time.iter);
       ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,filename,FILE_MODE_WRITE,&(self->viewer));CHKERRQ(ierr);
-      if (self->user->verbose) PetscPrintf(PETSC_COMM_WORLD,"Writing the solution to the vtk file. \n");
+      if (self->user.verbose) PetscPrintf(PETSC_COMM_WORLD,"Writing the solution to the vtk file. \n");
       /* ierr = PetscObjectSetName((PetscObject) u,"deformation");CHKERRQ(ierr); */
       ierr = VecView(self->u,self->viewer);CHKERRQ(ierr);
       ierr = PetscViewerDestroy(&(self->viewer));CHKERRQ(ierr);
-      if (self->user->verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
-      ++ self->user->time->iter;
+      if (self->user.verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
+      ++ self->user.time.iter;
     }
   }
   else{
@@ -111,6 +124,11 @@ static void * FEMAnalysis_update(void * _self){
     ierr = SNESSolve(self->snes,NULL,self->u);CHKERRQ(ierr);
     ierr = SNESGetIterationNumber(self->snes, &its);CHKERRQ(ierr);
     ierr = PetscPrintf(PETSC_COMM_WORLD,"Number of snes iterations %i \n", its);CHKERRQ(ierr);
+
+    ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,"solution.vtk",FILE_MODE_WRITE,&(self->viewer));CHKERRQ(ierr);
+    ierr = VecView(self->u,self->viewer);CHKERRQ(ierr);
+    ierr = PetscViewerDestroy(&(self->viewer));CHKERRQ(ierr);
+    
   }
   
 }
@@ -153,12 +171,12 @@ void * selectfsinterface(void * _self, const char interfacename[], const PetscIn
 static void * FEMAnalysis_settimestep(void * _self, PetscReal dt){
   struct FEMAnalysis * self = _self;
 
-  self->user->time->dt = dt;
+  self->user.time.dt = dt;
 
   return 0;
 }
 
-void * settimestep(void * _self, PetscReal dt){
+void * settimestep(void * _self, double dt){
   struct Class ** cp = _self;
   if(*cp != FEMAnalysis){
     fprintf(stderr,"ERROR:: error in settimestep. First argument must be of type FEMAnalysis.\n");
@@ -166,7 +184,36 @@ void * settimestep(void * _self, PetscReal dt){
   }
   struct FEMAnalysis * self = _self;
 
-  self->settimestep(self,dt);
+  self->settimestep(self,(PetscReal) dt);
+  return 0;
+}
+
+void * FEMAnalysis_copyFSInterface(const void * _self, void * b)
+{
+  const struct FEMAnalysis * self = _self;
+  /* PetscInt nvertices; */
+  PetscBool hasinterface;
+  /* IS points; */
+  PetscErrorCode ierr;
+  
+
+  ierr = DMHasLabel(self->dm,"fsinterface",&hasinterface);
+  if(! hasinterface)
+  {
+    fprintf(stderr,"ERROR:: error copying interface, the FEM analysis has no fluid solid interface appointed yet. \n");
+    return 0;
+  }
+  
+  /* ierr = DMGetStratumSize(self->dm, "fsinterface",0,&nvertices);  /\* determine */
+  /*                                                                  * number of */
+  /*                                                                  * vertices */
+  /*                                                                  * on the interface *\/ */
+  /* ierr = DMGetStratumIS(self->dm,"fsinterface",0,&points);  /\* get the point */
+  /*                                                            * numbers of the vertices *\/ */
+  
+  PhantomMeshSetDM(b,self->dm);
+  PhantomMeshSetSolution(b,self->u);
+  PhantomMeshSetupInterface(b);
   return 0;
 }
 
@@ -183,11 +230,11 @@ static PetscErrorCode SetupProblem(DM dm, AppCtx *user)
 
   
      /* Setting up the linear elasticity problem */
-    if (user->transient){
+    if (user->transient==PETSC_TRUE){
       ierr = PetscDSSetResidual(prob,0,f0_u_transient,f1_u);CHKERRQ(ierr);
        ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_3d);CHKERRQ(ierr);
     }
-    else if(user->ldis){
+    else if(user->ldis==PETSC_TRUE){
       if(user->verbose) ierr = PetscPrintf(PETSC_COMM_WORLD,"Setting up large displacement problem\n");
       ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_ldis);CHKERRQ(ierr);
       ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_ldis);CHKERRQ(ierr);
@@ -199,7 +246,7 @@ static PetscErrorCode SetupProblem(DM dm, AppCtx *user)
         ierr = PetscDSSetResidual(prob,0,f0_u,f1_u);CHKERRQ(ierr);
         ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_3d);CHKERRQ(ierr);
       }
-      else if(user->planestress){
+      else if(user->planestress==PETSC_TRUE){
         ierr = PetscDSSetResidual(prob,0,f0_u,f1_u_2d_pstress);CHKERRQ(ierr);
         ierr = PetscDSSetJacobian(prob,0,0,NULL,NULL,NULL,g3_uu_2d_pstress);CHKERRQ(ierr);
       }
@@ -212,7 +259,7 @@ static PetscErrorCode SetupProblem(DM dm, AppCtx *user)
 
 
     /* setting up the velocity field for the transient analysis */
-    if(user->transient){
+    if(user->transient==PETSC_TRUE){
       ierr = PetscDSSetResidual(prob,1,f0_vel,f1_vel);CHKERRQ(ierr);
       ierr = PetscDSSetJacobian(prob,1,1,g0_velvel,NULL,NULL,NULL);CHKERRQ(ierr);
       ierr = PetscDSSetDynamicJacobian(prob,1,0,g0_velu,NULL,NULL,NULL);CHKERRQ(ierr);
@@ -221,8 +268,8 @@ static PetscErrorCode SetupProblem(DM dm, AppCtx *user)
     }
   
   /* Setting the Neumann Boudnary Condition */
-  if (user->neumann){
-    if (user->ldis){
+  if (user->neumann==PETSC_TRUE){
+    if (user->ldis==PETSC_TRUE){
       ierr = PetscDSSetBdResidual(prob,0,f0_u_bd_ldis,f1_u_bd);CHKERRQ(ierr);
     }
     else{
@@ -258,7 +305,7 @@ static PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   ierr = PetscFECreateDefault(dm, dim, dim, simplex,"def_",PETSC_DEFAULT,&fe);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) fe, "deformation");CHKERRQ(ierr);
   
-  if(user->transient){
+  if(user->transient==PETSC_TRUE){
     if (user->ldis) PetscPrintf(PETSC_COMM_WORLD,"Large displacement formulation has no option for transient as of yet");
     ierr = PetscFEGetQuadrature(fe,&q);CHKERRQ(ierr);
     ierr = PetscQuadratureGetOrder(q,&order);CHKERRQ(ierr);
@@ -306,8 +353,8 @@ static PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
       pid[0] = 4; /* {4}; */ 	/* The pressure loaded faces */
     }
     else if(dim==3){
-      fid[0] = 10;  /* The fixed face */
-      fid[1] = 14;  /* the second fixed face */
+      /* fid[0] = 10;  /\* The fixed face *\/ */
+      /* fid[1] = 14;  /\* the second fixed face *\/ */
       pid[0]= 2;  /* The pressure loaded faces */
       sxid[0] = 4;
       szid[0] = 1;
@@ -318,7 +365,7 @@ static PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
     ierr = DMAddBoundary(cdm, PETSC_TRUE, "symmy", "Face Sets",0,1,restrictY, (void (*)()) zero_scalar, Nsyid, syid, user);CHKERRQ(ierr);
     ierr = DMAddBoundary(cdm, PETSC_TRUE, "bottom", "Face Sets",0,1,restrictZ, (void (*)()) zero_scalar, Nszid, szid, user);CHKERRQ(ierr);
 
-    if(user->neumann){
+    if(user->neumann==PETSC_TRUE){
       ierr = DMAddBoundary(cdm, PETSC_FALSE, "load", "Face Sets",0, Ncomp, components, NULL, Npid, pid, user);CHKERRQ(ierr);
      }
     else{
@@ -332,7 +379,7 @@ static PetscErrorCode SetupDiscretization(DM dm, AppCtx *user){
   PetscPrintf(PETSC_COMM_WORLD,"The order of the basis space is %i \n", BSpaceOrder);
 
   ierr = PetscFEDestroy(&fe); CHKERRQ(ierr);
-  if (user->transient){
+  if (user->transient==PETSC_TRUE){
     ierr = PetscFEDestroy(&fe_vel); CHKERRQ(ierr);
   }
   return(0);
@@ -347,19 +394,19 @@ static PetscErrorCode Monitor(TS ts, PetscInt step, PetscReal crtime, Vec u, voi
  
   sprintf(filename,"solution%i.vtu",step);
   ierr = PetscViewerVTKOpen(PETSC_COMM_WORLD,filename,FILE_MODE_WRITE,&viewer);CHKERRQ(ierr);
-  if (user->verbose) PetscPrintf(PETSC_COMM_WORLD,"Writing the solution to the vtk file. \n");
+  if (user->verbose==PETSC_TRUE) PetscPrintf(PETSC_COMM_WORLD,"Writing the solution to the vtk file. \n");
   ierr = VecView(u,viewer);CHKERRQ(ierr);
   ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
-  if (user->verbose)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
+  if (user->verbose==PETSC_TRUE)PetscPrintf(PETSC_COMM_WORLD,"Done creating the VTK file. \n");
     
   return(0);
 }
 
-static void * setuptransient(void * _self){
+static PetscErrorCode setuptransient(void * _self){
   struct FEMAnalysis * self = _self;
   PetscErrorCode ierr;
 
-  PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",user.time.total);
+  PetscPrintf(PETSC_COMM_WORLD,"starting transient analysis. Total time: %g s \n",self->user.time.total);
   ierr = TSCreate(PETSC_COMM_WORLD, &(self->ts)); CHKERRQ(ierr);
   ierr = TSSetType(self->ts, TSBEULER); CHKERRQ(ierr);
   ierr = TSSetDM(self->ts,self->dm); CHKERRQ(ierr);
@@ -377,19 +424,19 @@ static void * setuptransient(void * _self){
   ierr = DMCreateGlobalVector(self->dm, &(self->u)); CHKERRQ(ierr);
   
   ierr = TSSetSolution(self->ts,self->u); CHKERRQ(ierr);
-  ierr = TSSetDuration(self->ts,1000,self->user->time->total); CHKERRQ(ierr);
+  ierr = TSSetDuration(self->ts,1000,self->user.time.total); CHKERRQ(ierr);
   ierr = TSSetExactFinalTime(self->ts, TS_EXACTFINALTIME_MATCHSTEP); CHKERRQ(ierr);
   ierr = TSSetEquationType(self->ts,TS_EQ_IMPLICIT);CHKERRQ(ierr);
-  ierr = TSSetInitialTimeStep(self->ts,0.0, user.time.dt); CHKERRQ(ierr);
+  ierr = TSSetInitialTimeStep(self->ts,0.0, self->user.time.dt); CHKERRQ(ierr);
   ierr = TSSetFromOptions(self->ts); CHKERRQ(ierr);
   ierr = TSGetSNES(self->ts, &(self->snes)); CHKERRQ(ierr);
   ierr = SNESGetKSP(self->snes, &(self->ksp)); CHKERRQ(ierr);
 
-  return 0;
+  return (0);
 }
 
   
-static void * setupstationary(void * _self){
+static PetscErrorCode setupstationary(void * _self){
   struct FEMAnalysis * self = _self;
   PetscErrorCode ierr;
 
@@ -406,12 +453,12 @@ static void * setupstationary(void * _self){
   
   ierr = DMSetMatType(self->dm, MATMPIAIJ);CHKERRQ(ierr);
   ierr = DMCreateMatrix(self->dm, &(self->J));CHKERRQ(ierr);
-  A=J;
+  self->A=self->J;
   
   ierr = DMPlexSetSNESLocalFEM(self->dm,&(self->user),&(self->user),&(self->user));CHKERRQ(ierr);
   
   ierr = SNESSetJacobian(self->snes, self->A, self->J, NULL, NULL);CHKERRQ(ierr);
-  if (self->user->debug){  		/* Showing the Jacobi matrix for debugging purposes */
+  if (self->user.debug){  		/* Showing the Jacobi matrix for debugging purposes */
     ierr = PetscPrintf(PETSC_COMM_WORLD,"The Jacobian for the nonlinear solver ( and also the preconditioning matrix)\n");CHKERRQ(ierr);
     ierr = MatView(self->A,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
   }
@@ -419,15 +466,18 @@ static void * setupstationary(void * _self){
   ierr = SNESSetFromOptions(self->snes);CHKERRQ(ierr);
   
     
-  if (self->user->showInitial){ ierr = DMVecViewLocal(self->dm, self->u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr);}
+  /* if (self->user.showInitial) */
+  /* { */
+  /*   ierr = DMVecViewLocal(self->dm, self->u, PETSC_VIEWER_STDOUT_SELF);CHKERRQ(ierr); */
+  /* } */
   
-  if (self->user->debug) {
+  if (self->user.debug) {
     ierr = PetscPrintf(PETSC_COMM_WORLD,"initial guess \n");CHKERRQ(ierr);
     ierr = VecView(self->u, PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
   }
 
 
-  return 0;
+  return (0);
 }
 
 

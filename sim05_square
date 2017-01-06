@@ -7,9 +7,9 @@ START : Waterhammer problem as proposed by Koji Morita. Remodelled for Simmer S3
  &END
 
  &XMSH
-  IB=1,JB=11,
-  DRINP(1) = 2.50000D-2,
-  DZINP(1) = 11*5.00000D-2,
+  IB=5,JB=5,
+  DRINP(1) = 5*2.00000D-1,
+  DZINP(1) = 5*2.00000D-1,
   NREG=2,
  &END
 

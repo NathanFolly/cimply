@@ -36,3 +36,12 @@ boundaryvertextest: boundaryvertextest.o cimplyobjects.o boundaryvertex.o geomet
 phantommeshtest: phantommeshtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
 	-${CLINKER} -o phantommeshtest phantommeshtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o ${PETSC_LIB}
 	${RM} phantommeshtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o
+
+femanalysistest: femanalysistest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o cimplyDF.o simmerutilities.o cimplyfunctions.o
+	-${CLINKER} -o femanalysistest femanalysistest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o cimplyDF.o simmerutilities.o cimplyfunctions.o ${PETSC_LIB}
+	${RM} femanalysistest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o cimplyDF.o simmerutilities.o cimplyfunctions.o
+
+
+femandphantomtest: femandphantomtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o cimplyDF.o simmerutilities.o cimplyfunctions.o
+	-${CLINKER} -o femandphantomtest femandphantomtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o cimplyDF.o simmerutilities.o cimplyfunctions.o ${PETSC_LIB}
+	${RM} femandphantomtest.o phantommesh.o cimplyobjects.o boundaryvertex.o geometry.o phantomcell.o simmsh.o interface.o simmeranalysis.o femanalysis.o cimplyDF.o simmerutilities.o cimplyfunctions.o

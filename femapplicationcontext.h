@@ -1,10 +1,15 @@
 #ifndef FEMAPPLICATIONCONTEXT_H
 #define FEMAPPLICATIONCONTEXT_H
+#include <petscsys.h>
 
 typedef enum {RUN_STANDALONE, RUN_COUPLED} RunType;
 typedef enum {NONE, LABELS, BOUNDARIES, SOLUTION} Visualization;
 
-
+typedef struct
+{
+  PetscReal mu;
+  PetscReal lbda;
+}Material_Type;
 
 typedef struct  /* The time context */
 {
@@ -34,7 +39,7 @@ typedef struct {
   PetscBool ldis;  /* for large displacement */
   PetscBool planestress;  /* 2D analysis type: plane stress */
   TSctx time;
-  Material_type material;
+  Material_Type material;
   PetscViewer viewer;
   
 }AppCtx;

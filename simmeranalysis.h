@@ -18,8 +18,12 @@ struct SimmerAnalysis{
   /* simmer variables */
   double * PK;  /* The pressure in each K-cell */
 
+  void * (* givepressurefromlocation)(const void * _self, const PetscReal x[], PetscReal * pressure);
+  void * (* setuniformpressure)(void * _self, const double pressure);  /* for test reasons  */
 };
 
 extern const void * SimmerAnalysis;
 
+void * getSimmerPressure(const void * _self, const PetscReal x[], PetscReal * pressure);
+void * setUniformSimmerPressure(void * _self, const double pressure);
 #endif

@@ -23,8 +23,8 @@ static void * Interface_ctor(void * _self, va_list * app){
 
 static void * Interface_dtor(void * _self){
   struct Interface * self = _self;
-  if(self->SIMMsh){
-    delete(self->SIMMsh);
+  if(self->phantommesh){
+    delete(self->phantommesh);
   }
   return self;
 }
@@ -35,11 +35,11 @@ static void * Interface_update(void * _self){
     assert(self->FEM);
     update(self->FEM);
   }
-  /* if(!self->SIMMsh){ */
+  /* if(!self->phantommesh){ */
   /*   fprintf(stderr,"ERROR :: Interface has no SIMMER Mesh assigned to it yet\n"); */
   /*   return 0; */
   /* } */
-  /* update(self->SIMMsh); */
+  /* update(self->phantommesh); */
   update(self->phantommesh);
   return 0;
 }
@@ -78,6 +78,7 @@ static void * Interface_assign(void * _self,void * _b){
     self->phantommesh->JB = self->simmeranalysis->JB;
     self->phantommesh->IB = self->simmeranalysis->IB;
     self->phantommesh->phantomcell = (void **) calloc(self->phantommesh->MMS,sizeof(void *));
+
   }
   else{
     fprintf(stderr,"Second input argument: unsupported format. Expected FEMAnalysis or simmeranalysis. \n");
@@ -93,9 +94,9 @@ static void * Interface_getPhantomFractions(void * _self, float ** PhantomFracti
    fprintf(stderr,"ERROR :: Interface has no SIMMER Mesh assigned to it yet\n");
    return 0;
  }
- struct PhantomMesh * phantommesh = self->phantommesh;
+ /* struct PhantomMesh * phantommesh = self->phantommesh; */
   assert(self->class==Interface);
-  getPhantomFractions(phantommesh,PhantomFractions);
+  getPhantomFractions(self->phantommesh,PhantomFractions);
   return 0;
 }
 
@@ -108,8 +109,12 @@ static void * Interface_prepare(void * _self) {
   struct Interface * self = _self;
   assert(self->class==Interface);
   printf("preparing the interface... \n");
-  self->SIMMsh=new(SIMMsh);  /* creating a ne simmermesh */
-  prepare(self->SIMMsh);     /* preparing the new simmermesh */
+  /* self->phantommesh=new(PhantomMesh);  /\* creating a ne simmermesh *\/ */
+  /* prepare(self->phantommesh);     /\* preparing the new simmermesh *\/ */
+
+  /* TODO: make this nicer */
+  FEMAnalysis_copyFSInterface(self->FEM,self->phantommesh);
+  
   return 0;
 }
 

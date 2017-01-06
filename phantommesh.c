@@ -2,13 +2,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-
+#include <assert.h>
 
 static void * distributevertices(void * _self);
 /* distributes the boundary vertices and assigns them to the adequate phantom cells */
 static void * PhantomMesh_getPhantomFractions(void * _self, float ** phantomfractions);
 /* returns an allocated array with the phantomfractions of each cell. 0 if the cell is not a phantom cell */
-static void * findPhantomCell(const void * _self, float * position);
+static void * findPhantomCell(const void * _self, float * position, PetscBool isoutside);
   /*takes phantommesh and 3-D position in cylindrical coordinates
   returns pointer to phantomcell in phantommesh at specified position */
 static void * PhantomMesh_generatetestsphere(void * _self, float radius, int nvertices);
@@ -60,16 +60,35 @@ static void * PhantomMesh_update(void * _self){
       delete(self->phantomcell[i]);
     }
   }
-  for (i = 0; i< self->nbofvertices; i++){
-    update(self->boundary[i]);
-  }
+  self->phantomcell = (void **) calloc(self->MMS,sizeof(void *));
   
+  for (i = 0; i< self->nbofvertices; i++)
+  {
+    PetscReal vertexcoords[3];
+    float position[3];
+    int j;
+    getVertexCoordinatsDeformed(self->CoordSect, self->DispSection, self->coords, self->u, vertexnumber(self->boundary[i]),vertexcoords);
+    
+    /* printf("Vertex Number %i position: %f    %f    %f\n",vertexnumber(self->boundary[i]), vertexcoords[0], vertexcoords[1], vertexcoords[2]); */
+
+    for(j=0;j<3;j++)
+    {
+      position[j]=vertexcoords[j];
+    }
+    updateposition(self->boundary[i], position);
+
+  }
+
+  printf("done updating the positions \n");
+
   distributevertices(self);  /* reassign vertices to phantom cells according to their updated position */
 
+    printf("done distributing the vertices\n");
   
   /* TODO: the following code only works for waterhammer-like problems (if the upper right part of the mesh is the phantom part)*/
 
   handlePhantomCellsWaterHammerlike(self);
+  printf("Done updating the phantom Mesh. \n");
   return 0;
 }
 
@@ -84,6 +103,7 @@ const void * PhantomMesh = &_PhantomMesh;
 static void * PhantomMesh_getPhantomFractions(void * _self, float ** phantomfractions){
   const struct PhantomMesh * self = _self;
   int i;
+  /* assert(*phantomfractions); */
   free(*phantomfractions);
   (*phantomfractions) = (float *) calloc(self->MMS,sizeof(float));
    for (i = 0; i<self->MMS; i++){
@@ -102,20 +122,26 @@ static void * distributevertices(void * _self){
   for (i = 0; i<self->nbofvertices; i++){
     float * position;
     struct PhantomCell * mothercell;
+    PetscBool isoutside=PETSC_FALSE;
     getposition(self->boundary[i], &position, "cylind");  /* get
                                                                * coordinates
                                                                * of current
                                                                * position in
                                                                * cartesian /
                                                                * cylindrical coordinates */
-    mothercell = findPhantomCell(self, position);
+    mothercell = findPhantomCell(self, position, isoutside);
+    if (isoutside)
+    {
+      fprintf(stderr,"ERROR :: error finding appropriate SimmerCell for boundaryvertex. SIMMER domain to small");
+      break;
+    }
     assign(mothercell, self->boundary[i]);
   }
   return 0;
 }
 
 
-static void * findPhantomCell(const void * _self, float * position){
+static void * findPhantomCell(const void * _self, float * position, PetscBool isoutside){
   /*takes phantommesh and 3-D position in cylindrical coordinates
   returns pointer to phantomcell in phantommesh at specified position */
   const struct PhantomMesh * self = _self;
@@ -123,7 +149,7 @@ static void * findPhantomCell(const void * _self, float * position){
   /* TODO : this is only for SIMMER 2D at the moment */
   PetscBool routside=PETSC_FALSE, zoutside=PETSC_FALSE;  /* do the positions fall outside the SIMMER
                                   * grid */
-  PetscBool foundI=PETSC_FALSE, foundJ=PETSC_FALSE, isoutside=PETSC_FALSE;
+  PetscBool foundI=PETSC_FALSE, foundJ=PETSC_FALSE;/* , isoutside=PETSC_FALSE; */
   PetscReal cummulR = 0, cummulZ=0;  /* total R and Z position of the IJ outer
                                      * cell face */
   int CellNr, Ipos=0, Jpos=0;
@@ -189,9 +215,9 @@ static void * PhantomMesh_assignFEM(void * _self, void * _fem){
   struct PhantomMesh * self = _self;
   struct FEMAnalysis * fem = _fem;
 
-  FEMGetDMPointer(fem,self->dmptr);
-  FEMGetSolutionPointer(fem,self->sltnptr);
-  FEMGetImmersedBoundaryName(fem,self->immersedboundaryname);
+  /* FEMGetDMPointer(fem,self->dmptr); */
+  /* FEMGetSolutionPointer(fem,self->sltnptr); */
+  /* FEMGetImmersedBoundaryName(fem,self->immersedboundaryname); */
 
   return 0;
 }
@@ -248,4 +274,82 @@ static void * handlePhantomCellsWaterHammerlike(void * _self){
     }
   }
   return 0; 
+}
+
+/* ---------------------- functions available outside the object ------------ */
+
+void * PhantomMeshSetDM(void * _self, DM dm)
+{
+  struct PhantomMesh * self = _self;
+
+  self->dm = dm;
+  return 0;
+}
+
+void * PhantomMeshSetSolution(void * _self, Vec solution)
+{
+  struct PhantomMesh * self = _self;
+  self->u = solution;
+  return 0;
+}
+
+void * PhantomMeshSetupInterface(void * _self)
+{
+  struct PhantomMesh * self = _self;
+  IS is;
+  int i;
+  DM cdm;
+  /* PetscReal * coords = NULL; */
+  const PetscInt * indices;
+  PetscSection defaultsection;
+  PetscErrorCode ierr;
+
+  /* TODO: assign and use a self->immersedboundaryname. have to write a routine to set it for now use hardcoded "fsinterface" */
+  ierr = DMGetStratumSize(self->dm, "fsinterface" ,0,&(self->nbofvertices));
+  self->boundary = (void **) calloc(self->nbofvertices,sizeof(void *));
+  
+  ierr = DMGetStratumIS(self->dm, "fsinterface" ,0, &is);
+  ierr = ISGetIndices(is, &indices);
+  
+  ierr = DMGetCoordinatesLocal(self->dm, &(self->coords));
+  ierr = DMGetCoordinateDM(self->dm, &cdm);
+  ierr = DMGetDefaultSection(cdm, &(self->CoordSect));
+  ierr = DMGetDefaultSection(self->dm, &defaultsection);
+  ierr = PetscSectionGetField(defaultsection, 0, &(self->DispSection));
+  /* ierr = PetscSectionGetChart(cs, &pStart, &pEnd); */
+  /* ierr = VecGetArrayRead(coordinates, &coords); */
+  
+  for(i=0; i<self->nbofvertices; i++)
+
+  {
+    PetscInt dof, offset;
+    PetscReal vertexcoords[3];
+    int vtxnumber=indices[i];
+    PetscInt * CoordIdx=NULL;
+    int j;
+        
+        
+     ierr = PetscSectionGetOffset(self->CoordSect,vtxnumber,&offset);
+     ierr = PetscSectionGetDof(self->CoordSect, vtxnumber, &dof);
+     ierr = PetscCalloc1(dof,&CoordIdx); 
+
+     for (j=0; j<dof; j++){
+       CoordIdx[j] = j+offset;
+     }
+     ierr = VecGetValues(self->coords, dof, CoordIdx, vertexcoords);
+
+     ierr = PetscFree(CoordIdx);
+     self->boundary[i]=new(BoundaryVertex,vtxnumber,vertexcoords[0],vertexcoords[1],vertexcoords[2]);
+
+  }
+  printf("Created all the boundaryvertices. \n");
+
+  
+  ierr = ISRestoreIndices(is, &indices);
+  ierr = ISDestroy(&is);
+  /* ierr = VecRestoreArrayRead(coordinates, &coords); */
+  
+  
+
+  return 0;
 }

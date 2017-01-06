@@ -3,11 +3,18 @@
 #include <string.h>
 
 static void * readfromsim05file(void * _self);
+static void * SimmerAnalysis_givepressurefromlocation(const void * _self, const PetscReal x[], PetscReal * pressure);
+static  void * SimmerAnalysis_setuniformpressure(void * _self, const double pressure);  /* for test reasons  */
+
+
+
 
 static void * SimmerAnalysis_ctor(void * _self, va_list * app){
   struct SimmerAnalysis * self = _self;
   /* intializing the variables */
   self->PK = NULL;
+  self->givepressurefromlocation=SimmerAnalysis_givepressurefromlocation;
+  self->setuniformpressure= SimmerAnalysis_setuniformpressure;
   /* reading the sim05 file */
   readfromsim05file(self);
   /* allocating the correct size of the variable vectors */
@@ -49,6 +56,61 @@ const void * SimmerAnalysis = &_SimmerAnalysis;
 
 
 /*-------------- reader for the sim05 file ----------- */
+
+void * getSimmerPressure(const void * _self, const PetscReal x[], PetscReal * pressure)
+{
+  const struct Class * const * cp = _self;
+  if(*cp != SimmerAnalysis)
+  {
+    fprintf(stderr,"ERROR:: error in getSimmerPressure. First argument needs to be of type SimmerAnalysis. \n");
+    return 0;
+  }
+  
+  const struct SimmerAnalysis * self = _self;
+  self->givepressurefromlocation(self, x, pressure);
+  return 0;
+}
+
+void * setUniformSimmerPressure(void * _self, const double pressure){
+  struct Class ** cp = _self;
+  if(*cp!=SimmerAnalysis)
+  {
+    fprintf(stderr,"ERROR:: error in setUniformSimmerPressure. First argument needs to be of type SimmerAnalysis. \n");
+    return 0;
+  }
+  
+  struct SimmerAnalysis * self = _self;
+  self->setuniformpressure(self, pressure);
+  return 0;
+}
+
+
+static void * SimmerAnalysis_givepressurefromlocation(const void * _self,
+                                                      const PetscReal x[], PetscReal * pressure)
+{
+  const struct SimmerAnalysis * self = _self;
+  PetscBool isoutside;  /* don't do anything with this information atm */
+  PetscInt Ipos=0, Jpos=0;  /* don't use this either atm */
+  PetscInt CellNr=0;
+  findSIMMERCell(self, x, isoutside, &Ipos, &Jpos, &CellNr);
+  *pressure=self->PK[CellNr];
+  return 0;
+  
+}
+
+static void * SimmerAnalysis_setuniformpressure(void * _self, const double pressure)
+{
+  struct SimmerAnalysis * self = _self;
+  int i=0;
+
+  for(i=0;i<self->MMS;i++)
+  {
+    self->PK[i] = pressure;
+  }
+  return 0;
+}
+  
+
 
 
 static void * readfromsim05file(void * _self){

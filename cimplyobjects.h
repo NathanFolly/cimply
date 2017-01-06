@@ -30,6 +30,6 @@ float phantomfraction(void * _self);
 float testfunction(void);
 void * generateTestSphere(void * _self, float radius, int nvertives);
 void * getposition(const void * _self, float ** position, const char * coordsystem);
-    
+void * updateposition(void * _self, const float * coords);    
 
 #endif

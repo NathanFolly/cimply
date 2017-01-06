@@ -57,7 +57,9 @@ static void * Geometry_getposition(const void * _self, float ** position, const 
 static void * Geometry_updateposition(void * _self, const float * coords){
   struct Geometry * self = _self;
   int i;
+  
   printf("Point 2. \n");
+  
   for (i=0;i<3;i++)
   {
   self->currentposition[i] = coords[i];

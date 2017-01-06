@@ -24,8 +24,16 @@ struct PhantomMesh{
   void ** phantomcell;
   void ** boundary;
 
-  DM * dmptr;  /* the Petsc DM this phantom mesh is associated with */
-  void * sltnptr;  /* pointer to the solution of the FEM analysis */
+  /* information necessary to update the vertex locations */
+
+  DM dm;
+  Vec coords,u;
+  PetscSection CoordSect, DispSection;
+
+  char * immersedboundaryname;
+
+  /* DM * dmptr;  /\* the Petsc DM this phantom mesh is associated with *\/ */
+  /* void * sltnptr;  /\* pointer to the solution of the FEM analysis *\/ */
   
 
   void * (* getPhantomFractions)(void * _self, float ** phantomfractions);
@@ -34,6 +42,9 @@ struct PhantomMesh{
 };
 
 extern const void * PhantomMesh;
+void * PhantomMeshSetDM(void * _self, DM dm);
+void * PhantomMeshSetSolution(void * _self, Vec solution);
+void * PhantomMeshSetupInterface(void * _self);
 
 
 

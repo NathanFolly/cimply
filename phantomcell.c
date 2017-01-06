@@ -86,9 +86,9 @@ static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self){
   struct PhantomCell * self = _self;
   struct BoundaryVertex * boundaryvertex;
   struct Node * node=self->vertexring;
-  float * position;
-  float rmax, zmax;  /* the maximum radial and vertical vertex positions encountered so far */
-  float reductionvolume=0;  /* volume by which the phantomvolume is reduced*/
+  double * position;
+  double rmax, zmax;  /* the maximum radial and vertical vertex positions encountered so far */
+  double reductionvolume=0;  /* volume by which the phantomvolume is reduced*/
   int i=0;
 
     if(!self->vertexring){
@@ -98,13 +98,13 @@ static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self){
 
   while(node){
     /* TODO: this is ugly. there must be a better solution to this */
-    float rclosest=self->RLB, zclosest=self->ZLB;  /* r- and z- positions of closest subsquares */
+    double rclosest=self->RLB, zclosest=self->ZLB;  /* r- and z- positions of closest subsquares */
     boundaryvertex =(struct BoundaryVertex *) node->content;
     getposition(boundaryvertex,&position,"cylind");
      struct Node * historynode=self->vertexring;
     while(historynode!=node){
-      float * historyposition;
-      float rdist, zdist;
+      double * historyposition;
+      double rdist, zdist;
       getposition(historynode->content, &historyposition, "cylind");
       rdist = position[0]-historyposition[0];
       zdist = position[2]-historyposition[2];
@@ -123,6 +123,11 @@ static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self){
   }
   self->phantomvolume = self->cellvolume - reductionvolume;
   self->phantomfraction = self->phantomvolume/self->cellvolume;
+  /* printf("phantomvolume = %f \n", self->phantomvolume); */
+  /* printf("cellvolume = %f \n", self->cellvolume); */
+  /* printf("PHANTOMFRACTION = %f \n", self->phantomfraction); */
+  
+
   
   
   /* run  */
