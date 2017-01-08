@@ -1,5 +1,6 @@
 #include <petscdm.h>
 #include <petscdmlabel.h>
+#include <petscdmplex.h>
 
 
 #undef __FUNCT__
@@ -50,7 +51,7 @@ PetscErrorCode makeBoundaryLabel(DM dm, const char OldLabelName[], const PetscIn
     ierr = DMLabelStratumHasPoint(DepthLabel,depth-1,Pntids[i], &contains); CHKERRQ(ierr);
     if(contains){  /* skip points with wrong depth */
       ierr = DMLabelSetValue(NewLabel, Pntids[i], depth-1); CHKERRQ(ierr);
-      ierr = DMPlexGetCone(dm, Pntids[i], &cone); CHKERRQ(ierr);
+      ierr = DMPlexGetCone(dm, Pntids[i],(const PetscInt **)  &cone); CHKERRQ(ierr);
       ierr = DMPlexGetConeSize(dm,Pntids[i], &conesize); CHKERRQ(ierr);
 
       for (j=0; j<conesize; j++)
@@ -61,7 +62,7 @@ PetscErrorCode makeBoundaryLabel(DM dm, const char OldLabelName[], const PetscIn
         
         ierr = DMLabelSetValue(NewLabel, cone[j], depth-2); CHKERRQ(ierr);
         if(depth==3){
-          ierr = DMPlexGetCone(dm, cone[j], &VertexCone); CHKERRQ(ierr);
+          ierr = DMPlexGetCone(dm, cone[j], (const PetscInt **) &VertexCone); CHKERRQ(ierr);
           ierr = DMPlexGetConeSize(dm,cone[j], &VertexConeSize); CHKERRQ(ierr);
           for (k=0;k<VertexConeSize;k++){
             ierr = DMLabelSetValue(NewLabel, VertexCone[k], depth-3); CHKERRQ(ierr);
@@ -113,7 +114,7 @@ PetscErrorCode getVertexCoordinatsDeformed(PetscSection CoordSect, PetscSection 
    * deformation might lack a degree of freedom. We currently handle this
    * with an error since we don't know which spatial dimension is
    * restricted. This issue should be adressed in the future.*/
-  if (!dim==DispDof) SETERRQ3(PETSC_COMM_WORLD, PETSC_ERR_ARG_WRONG, "Vertex No %i has only %i degrees of freedom in a %i dimensional domain.",VertexNo,DispDof,dim);
+  if (!(dim==DispDof)) SETERRQ3(PETSC_COMM_WORLD, PETSC_ERR_ARG_WRONG, "Vertex No %i has only %i degrees of freedom in a %i dimensional domain.",VertexNo,DispDof,dim);
 
   ierr = PetscCalloc1(DispDof, &displacement); CHKERRQ(ierr);
   ierr = PetscCalloc1(DispDof, &DispIdx); CHKERRQ(ierr);
@@ -144,18 +145,18 @@ PetscErrorCode getFaceCoordinatesDeformed(DM dm, const char LabelName[], Vec *Fa
   /* Takes a DM and the name of a label. The label IDs should represent the
    * depth of the respective strata i.e. Label[0] = Vertices, Label[1] lines etc */
   DM cdm;
-  PetscSection sect, ClosSect;  /* section defining the coordinates and the
+  PetscSection sect;  /* section defining the coordinates and the
                                  * closure size of each element in the label */
-  PetscInt NSurfElements,dim;
-  const PetscInt *SurfElement;
+  PetscInt dim;
+  /* const PetscInt *SurfElement; */
   Vec coordinates, coordinatessubset;
-  PetscScalar *coords=NULL;
+  /* PetscScalar *coords=NULL; */
   IS SurfVertices;
   PetscErrorCode ierr;
-  DMLabel FaceLabel;
-  PetscInt i;
-  PetscInt *ClsrPoints= NULL;
-  PetscInt NClsrPoints=0;
+  /* DMLabel FaceLabel; */
+  /* PetscInt i; */
+  /* PetscInt *ClsrPoints= NULL; */
+  /* PetscInt NClsrPoints=0; */
   PetscBool exists=PETSC_FALSE;
   PetscInt pstart, pend;
 
@@ -234,3 +235,12 @@ PetscErrorCode getFaceCoordinatesDeformed(DM dm, const char LabelName[], Vec *Fa
 
   return 0;  
 }
+
+/* #undef __FUNCT__ */
+/* #define __FUNCT__ "getVertexSurfaceNormal" */
+/* /\* given a dm, a surface label and a vertex number, gives the face normal vector of the surface at that point in space*\/ */
+
+/* PetscErrorCode getVertexSurfaceNormal(DM dm, const char * labelname, const int vertexnumber, double * facenormal) */
+/* { */
+/*   PetscErrorCode ierr; */
+  

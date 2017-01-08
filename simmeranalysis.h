@@ -20,6 +20,8 @@ struct SimmerAnalysis{
 
   void * (* givepressurefromlocation)(const void * _self, const PetscReal x[], PetscReal * pressure);
   void * (* setuniformpressure)(void * _self, const double pressure);  /* for test reasons  */
+  void * (* setpressure)(void * _self, const double * pressure);
+  void * (* getMMS)(const void * _self, int * MMS);
 };
 
 extern const void * SimmerAnalysis;

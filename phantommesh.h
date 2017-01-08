@@ -36,7 +36,7 @@ struct PhantomMesh{
   /* void * sltnptr;  /\* pointer to the solution of the FEM analysis *\/ */
   
 
-  void * (* getPhantomFractions)(void * _self, float ** phantomfractions);
+  void * (* getPhantomFractions)(void * _self, double ** phantomfractions);
   void * (* generateTestSphere)(void * _self, float radius, int nvertices);
   
 };

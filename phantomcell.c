@@ -7,10 +7,18 @@
 #include "cimplySimmerUtils.h"
 #include <math.h>
 
-static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self);
+static void PhantomCell_calculatePhantomFraction_rmaxzmax(void * _self); /* very
+									   crude. for
+									   tests only */
+  
+static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self); /* problems
+										  with
+										  arbitrary
+										  geometry */
+
 static void PhantomCell_addvertex(void * _self, void * _boundaryvertex);
 static void PhantomCell_prepare(void * _self);
-static void PhantomCell_givePhantomFraction(void * _self, float * phantomfraction);
+static void PhantomCell_givePhantomFraction(void * _self, double * phantomfraction);
 
 
 static void * PhantomCell_ctor(void * _self, va_list *app ){
@@ -32,7 +40,7 @@ static void * PhantomCell_ctor(void * _self, va_list *app ){
   self->cellvolume=M_PI*(pow(self->RUB,2)-pow(self->RLB,2))*(self->ZUB-self->ZLB);
       
   self->prepare=PhantomCell_prepare;
-  self->calculatePhantomFraction = PhantomCell_calculatePhantomFraction_rectangleslabs;
+  self->calculatePhantomFraction = PhantomCell_calculatePhantomFraction_rmaxzmax;
   self->assign=PhantomCell_addvertex;
   self->givePhantomFraction = PhantomCell_givePhantomFraction;
   
@@ -54,7 +62,7 @@ static void * PhantomCell_dtor(void * _self){
     }
   }
   if(self->subcell){  /* deleting all Phatom Subcells */
-    struct PhantomCell ** subcell = self->subcell;
+    /* struct PhantomCell ** subcell = self->subcell; */
     int i;
     for (i = 0; i<sizeof(self->subcell)/sizeof(self->subcell[0]); i++) {
       delete (self->subcell[i]);
@@ -74,7 +82,7 @@ static const struct Class _PhantomCell = {sizeof(struct PhantomCell), PhantomCel
 const void * PhantomCell = & _PhantomCell;
 
 
-static void PhantomCell_givePhantomFraction(void * _self, float *  phantomfraction){
+static void PhantomCell_givePhantomFraction(void * _self, double *  phantomfraction){
   struct PhantomCell * self = _self;
   /* TODO: maybe add uptodate attribute in PhantomCell and update here if not already up to date */
   * phantomfraction = self->phantomfraction;
@@ -82,11 +90,50 @@ static void PhantomCell_givePhantomFraction(void * _self, float *  phantomfracti
 }
 
 
+static void PhantomCell_calculatePhantomFraction_rmaxzmax(void * _self)
+{
+  /* the crudest of all possible methods to calculate the phantom
+     fraction. approximates the phantom volume by a single
+     rectangle. Boundaries are the maximum r and the maximum z-value
+     of the vertices in this phantomcell. This method should only be
+     used for test purposes and in waterhammerlike problems */
+  struct PhantomCell * self = _self;
+  struct Node * node = self->vertexring;
+  float rmax=self->RLB, zmax = self->ZLB;
+
+
+  printf("WARNING :: using a very crude method for calculating the phantomfraction. You should use this for test purposes only.\n");
+  printf("RLB = %f,   RUB= %f,   ZlB= %f,    ZUB= %f \n",self->RLB,self->RUB,self->ZLB,self->ZUB);
+  while(node)
+    {
+      float * position=NULL;
+      getposition(node->content, &position, "cylind");
+      if(position[0]>rmax) rmax=position[0];
+      if(position[2]>zmax) zmax=position[2];
+      free(position);
+      node = node->next;
+    }
+  self->phantomvolume = self->cellvolume-(M_PI*(pow(rmax,2)-pow(self->RLB,2))*(zmax-self->ZLB));
+  printf("rmax: %f,      zmax %f \n",rmax, zmax);
+  /* printf("cellvolume = %f \n", self->cellvolume); */
+  /* printf("phantomvolume = %f \n", self->phantomvolume); */
+  assert(self->phantomvolume<=self->cellvolume);
+  assert(self->phantomvolume>=0);
+  
+  self->phantomfraction = self->phantomvolume/self->cellvolume;
+
+
+  printf("PHANTOMFRACTION = %f \n", self->phantomfraction);
+  
+}
+					  
+
 static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self){
+  /* this function does not work for standard reactor vessel geometries or even pipes */
   struct PhantomCell * self = _self;
   struct BoundaryVertex * boundaryvertex;
   struct Node * node=self->vertexring;
-  double * position;
+  float * position;
   double rmax, zmax;  /* the maximum radial and vertical vertex positions encountered so far */
   double reductionvolume=0;  /* volume by which the phantomvolume is reduced*/
   int i=0;
@@ -103,29 +150,40 @@ static void PhantomCell_calculatePhantomFraction_rectangleslabs(void * _self){
     getposition(boundaryvertex,&position,"cylind");
      struct Node * historynode=self->vertexring;
     while(historynode!=node){
-      double * historyposition;
+      float * historyposition;
       double rdist, zdist;
       getposition(historynode->content, &historyposition, "cylind");
       rdist = position[0]-historyposition[0];
       zdist = position[2]-historyposition[2];
-      if(rdist>0&&rdist<(position[0]-rclosest)){
+      if(rdist>=0&&rdist<(position[0]-rclosest)){
+      /* if(rdist<(position[0]-rclosest)){ */
         rclosest = historyposition[0];
       }
-      if(zdist>0&&zdist<(position[2]-zclosest)){
+      if(zdist>=0&&zdist<(position[2]-zclosest)){
+      /* if(zdist<(position[2]-zclosest)){ */
         zclosest = historyposition[2];
       }
       historynode=historynode->next;
     }
-    reductionvolume += M_PI*(pow(position[0],2)-pow(rclosest,2))*(position[2]-zclosest);
-    
+    if(position[0]-rclosest>0)
+      {
+	reductionvolume += M_PI*(pow(position[0],2)-pow(rclosest,2))*(position[2]-zclosest);
+      }
+    /* else */
+    /*   { */
+    /* 	reductionvolume -= M_PI*(pow(position[0],2)-pow(rclosest,2))*(position[2]-zclosest); */
+    /*   } */
     node = node->next;
     i++;
   }
+  assert(reductionvolume<=self->cellvolume);
+  assert(reductionvolume>=0);
   self->phantomvolume = self->cellvolume - reductionvolume;
   self->phantomfraction = self->phantomvolume/self->cellvolume;
-  /* printf("phantomvolume = %f \n", self->phantomvolume); */
-  /* printf("cellvolume = %f \n", self->cellvolume); */
-  /* printf("PHANTOMFRACTION = %f \n", self->phantomfraction); */
+  printf("reductionvolume = %f \n", reductionvolume);
+  printf("cellvolume = %f \n", self->cellvolume);
+  printf("phantomvolume = %f \n", self->phantomvolume);
+  printf("PHANTOMFRACTION = %f \n", self->phantomfraction);
   
 
   

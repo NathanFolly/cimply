@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-static void * Interface_getPhantomFractions(void * _self, float ** PhantomFractions);
+static void * Interface_getPhantomFractions(void * _self, double ** PhantomFractions);
 static void * Interface_prepare(void * _self);
 static void * Interface_assign(void * _self, void * _b);
 
@@ -88,7 +88,7 @@ static void * Interface_assign(void * _self,void * _b){
 
 
 /* this is ugly. we should be able to call getPhantomFractions on interfaces, SimmerMeshes and PhantomCells. like this it is only possible for interfaces*/
-static void * Interface_getPhantomFractions(void * _self, float ** PhantomFractions){
+static void * Interface_getPhantomFractions(void * _self, double ** phantomfractions){
  const struct Interface * self = _self;
  if(!self->phantommesh){
    fprintf(stderr,"ERROR :: Interface has no SIMMER Mesh assigned to it yet\n");
@@ -96,7 +96,7 @@ static void * Interface_getPhantomFractions(void * _self, float ** PhantomFracti
  }
  /* struct PhantomMesh * phantommesh = self->phantommesh; */
   assert(self->class==Interface);
-  getPhantomFractions(self->phantommesh,PhantomFractions);
+  getPhantomFractions(self->phantommesh,phantomfractions);
   return 0;
 }
 

@@ -1,12 +1,13 @@
 #include "simmeranalysis.h"
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 static void * readfromsim05file(void * _self);
 static void * SimmerAnalysis_givepressurefromlocation(const void * _self, const PetscReal x[], PetscReal * pressure);
-static  void * SimmerAnalysis_setuniformpressure(void * _self, const double pressure);  /* for test reasons  */
-
-
+static void * SimmerAnalysis_setuniformpressure(void * _self, const double pressure);  /* for test reasons  */
+static void * SimmerAnalysis_setpressure(void * _self, const double * pressure);
+static void * SimmerAnalysis_getMMS(const void * self, int *  MMS);
 
 
 static void * SimmerAnalysis_ctor(void * _self, va_list * app){
@@ -15,6 +16,9 @@ static void * SimmerAnalysis_ctor(void * _self, va_list * app){
   self->PK = NULL;
   self->givepressurefromlocation=SimmerAnalysis_givepressurefromlocation;
   self->setuniformpressure= SimmerAnalysis_setuniformpressure;
+  self->setpressure = SimmerAnalysis_setpressure;
+  self->getMMS = SimmerAnalysis_getMMS;
+  
   /* reading the sim05 file */
   readfromsim05file(self);
   /* allocating the correct size of the variable vectors */
@@ -109,8 +113,26 @@ static void * SimmerAnalysis_setuniformpressure(void * _self, const double press
   }
   return 0;
 }
-  
 
+static void * SimmerAnalysis_setpressure(void * _self, const double * pressure)
+{
+  struct SimmerAnalysis * self = _self;
+  int i;
+  /* assert(sizeof(pressure)/sizeof(double)==self->MMS); */
+  for (i=0;i<self->MMS;i++)
+    {
+      self->PK[i]=pressure[i];
+    }
+  return 0;
+}
+    
+  
+static void * SimmerAnalysis_getMMS(const void * self, int *  MMS)
+{
+  const struct SimmerAnalysis * self = _self;
+  *MMS = self->MMS;
+  return 0;
+}
 
 
 static void * readfromsim05file(void * _self){

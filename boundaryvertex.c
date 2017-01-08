@@ -31,7 +31,7 @@ static void * BoundaryVertex_dtor(void * _self){
 }
 
 static void * BoundaryVertex_update(void * _self){
-  struct BoundaryVertex * self = _self;
+  /* struct BoundaryVertex * self = _self; */
   return 0;
 }
 

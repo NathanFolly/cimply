@@ -31,6 +31,7 @@ struct FEMAnalysis{
 
   void * (* getPhantomFractions) (void * _self, float * PhantomFractions);
   void * (* settimestep) (void * _self, double dt);
+  void * (* setiteration) (void * _self, const int iter);
   void * (* selectfsinterface) (void * _self, const char interfacename[], const PetscInt interfacelabelid);
   void * (* copyFSInterface) (const void * _self, void * _b);
 };

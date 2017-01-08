@@ -414,6 +414,7 @@ void f0_u_bd(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   /* get the pressure from the Simmer data according to the location of the
    * boundary element */
   getSimmerPressure((void * ) simmeranal,x,&pressure);
+  pressure=pressure*1E-9;
     
   for (comp=0; comp<Ncomp; ++comp){
     f0[comp] = pressure*n[comp];

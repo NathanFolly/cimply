@@ -1,5 +1,7 @@
 #include "geometry.h"
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 static void * Geometry_getposition(const void * _self, float ** position, const char * coordinatesystem);
 static void * Geometry_updateposition(void * self, const float * coords);
 
@@ -23,7 +25,7 @@ static void * Geometry_dtor(void * _self){
 }
 
 static void * Geometry_update(void * _self){
-  struct Geometry * self = _self;
+  /* struct Geometry * self = _self; */
   return 0;
 }
 

@@ -6,9 +6,9 @@
 
 static void * distributevertices(void * _self);
 /* distributes the boundary vertices and assigns them to the adequate phantom cells */
-static void * PhantomMesh_getPhantomFractions(void * _self, float ** phantomfractions);
+static void * PhantomMesh_getPhantomFractions(void * _self, double ** phantomfractions);
 /* returns an allocated array with the phantomfractions of each cell. 0 if the cell is not a phantom cell */
-static void * findPhantomCell(const void * _self, float * position, PetscBool isoutside);
+static void * findPhantomCell(const void * _self, const float * position, PetscBool isoutside);
   /*takes phantommesh and 3-D position in cylindrical coordinates
   returns pointer to phantomcell in phantommesh at specified position */
 static void * PhantomMesh_generatetestsphere(void * _self, float radius, int nvertices);
@@ -61,6 +61,7 @@ static void * PhantomMesh_update(void * _self){
     }
   }
   self->phantomcell = (void **) calloc(self->MMS,sizeof(void *));
+  assert(self->phantomcell);
   
   for (i = 0; i< self->nbofvertices; i++)
   {
@@ -83,7 +84,7 @@ static void * PhantomMesh_update(void * _self){
 
   distributevertices(self);  /* reassign vertices to phantom cells according to their updated position */
 
-    printf("done distributing the vertices\n");
+  printf("done distributing the vertices\n");
   
   /* TODO: the following code only works for waterhammer-like problems (if the upper right part of the mesh is the phantom part)*/
 
@@ -100,12 +101,13 @@ const void * PhantomMesh = &_PhantomMesh;
 /* -------------- Class specific functions -------------- */
 
 
-static void * PhantomMesh_getPhantomFractions(void * _self, float ** phantomfractions){
+static void * PhantomMesh_getPhantomFractions(void * _self, double ** phantomfractions){
   const struct PhantomMesh * self = _self;
   int i;
   /* assert(*phantomfractions); */
   free(*phantomfractions);
-  (*phantomfractions) = (float *) calloc(self->MMS,sizeof(float));
+  (*phantomfractions) = (double *) calloc(self->MMS,sizeof(double));
+  assert(*phantomfractions);
    for (i = 0; i<self->MMS; i++){
     if(self->phantomcell[i]){
       (*phantomfractions)[i] = phantomfraction(self->phantomcell[i]);
@@ -132,16 +134,17 @@ static void * distributevertices(void * _self){
     mothercell = findPhantomCell(self, position, isoutside);
     if (isoutside)
     {
-      fprintf(stderr,"ERROR :: error finding appropriate SimmerCell for boundaryvertex. SIMMER domain to small");
+      fprintf(stderr,"ERROR :: error finding appropriate SimmerCell for boundaryvertex. SIMMER domain too small");
       break;
     }
+    assert(mothercell);
     assign(mothercell, self->boundary[i]);
   }
   return 0;
 }
 
 
-static void * findPhantomCell(const void * _self, float * position, PetscBool isoutside){
+static void * findPhantomCell(const void * _self, const float * position, PetscBool isoutside){
   /*takes phantommesh and 3-D position in cylindrical coordinates
   returns pointer to phantomcell in phantommesh at specified position */
   const struct PhantomMesh * self = _self;
@@ -150,7 +153,7 @@ static void * findPhantomCell(const void * _self, float * position, PetscBool is
   PetscBool routside=PETSC_FALSE, zoutside=PETSC_FALSE;  /* do the positions fall outside the SIMMER
                                   * grid */
   PetscBool foundI=PETSC_FALSE, foundJ=PETSC_FALSE;/* , isoutside=PETSC_FALSE; */
-  PetscReal cummulR = 0, cummulZ=0;  /* total R and Z position of the IJ outer
+  PetscReal cummulR = 0.0, cummulZ=0.0;  /* total R and Z position of the IJ outer
                                      * cell face */
   int CellNr, Ipos=0, Jpos=0;
   const PetscReal r = position[0];
@@ -160,6 +163,7 @@ static void * findPhantomCell(const void * _self, float * position, PetscBool is
       routside=PETSC_TRUE;
       foundI = PETSC_TRUE;
       Ipos=Ipos-1;
+      if(Ipos<0) fprintf(stderr,"ERROR :: the boundary vertex seems to be on the wrong side of the vertical symmetry line (z). Its position in cylindrical coordinates is[%f,%f,%f]",position[0], position[1], position[2] );
       break;
     }
     cummulR = cummulR+self->DRINP[Ipos];
@@ -179,6 +183,7 @@ static void * findPhantomCell(const void * _self, float * position, PetscBool is
       zoutside=PETSC_TRUE;
       foundJ = PETSC_TRUE;
       Jpos=Jpos-1;
+      if(Jpos<0) fprintf(stderr,"ERROR :: the boundary vertex seems to be outside of the computational domain. Its position in cylindrical coordinates is[%f,%f,%f]",position[0], position[1], position[2] );
       break;
     }
     cummulZ = cummulZ + self->DZINP[Jpos];
@@ -190,10 +195,11 @@ static void * findPhantomCell(const void * _self, float * position, PetscBool is
   }
   if(routside || zoutside){
     isoutside = PETSC_TRUE;
+    printf("position outside of the SIMMER mesh \n");
    }
   CellNr = (self->IB+2)*(Jpos+1)+Ipos+1;  
 
-  if(!self->phantomcell[CellNr]){
+  if(!(self->phantomcell[CellNr])){
     float RLB=0,RUB=0,ZLB=0,ZUB=0;
     int i;
     for (i=0;i<Ipos;i++){
@@ -211,16 +217,16 @@ static void * findPhantomCell(const void * _self, float * position, PetscBool is
 }
 
 
-static void * PhantomMesh_assignFEM(void * _self, void * _fem){
-  struct PhantomMesh * self = _self;
-  struct FEMAnalysis * fem = _fem;
+/* static void * PhantomMesh_assignFEM(void * _self, void * _fem){ */
+/*   struct PhantomMesh * self = _self; */
+/*   struct FEMAnalysis * fem = _fem; */
 
-  /* FEMGetDMPointer(fem,self->dmptr); */
-  /* FEMGetSolutionPointer(fem,self->sltnptr); */
-  /* FEMGetImmersedBoundaryName(fem,self->immersedboundaryname); */
+/*   /\* FEMGetDMPointer(fem,self->dmptr); *\/ */
+/*   /\* FEMGetSolutionPointer(fem,self->sltnptr); *\/ */
+/*   /\* FEMGetImmersedBoundaryName(fem,self->immersedboundaryname); *\/ */
 
-  return 0;
-}
+/*   return 0; */
+/* } */
 
 static void * PhantomMesh_generatetestsphere(void * _self, float radius, int nvertices){
   struct PhantomMesh * self = _self;
@@ -247,6 +253,7 @@ static void * handlePhantomCellsWaterHammerlike(void * _self){
     int fsicellnb=-1;  /* cell number of fluid/solid interface cell last encountered. determining  the 100% phantomfraction cells */
   for (i =0; i< self->MMS; i++){
     if(self->phantomcell[i]){
+      printf("cell number %i is a phantom cell \n",i);
       update(self->phantomcell[i]);
       if(fsicellnb!=0) fsicellnb=i;
       if(i%(self->IB+2)==1) fsicellnb=0;
@@ -255,21 +262,28 @@ static void * handlePhantomCellsWaterHammerlike(void * _self){
       fsicellnb=-1;
     }
    else if(0<=fsicellnb&&i>fsicellnb){
+     printf("Making cell number %i a phantom cell because I think it lies outside the fluid domain.\n",i);
       int Ipos=i%(self->IB+2);
       int Jpos=(i-Ipos-1)/(self->IB+2);
-      float RLB=0,RUB=0,ZLB=0,ZUB=0;
-      int j;
-      if(Jpos<self->JB){
-        for (j=0;j<Jpos;j++){
-          RLB+=self->DRINP[j];
-        }
-        RUB=RLB+self->DRINP[Jpos];
-        for (j=0;j<Jpos;j++){
-          ZLB+=self->DZINP[j];
-        }
-        ZUB=ZLB+self->DZINP[Jpos];
-        self->phantomcell[i]=new(PhantomCell,RLB,RUB,ZLB,ZUB);
-        update(self->phantomcell[i]);
+      if(Ipos>self->IB||Jpos>self->JB)
+	{
+	  printf("changed my mind. This is a ghost cell \n");
+	}
+      else{
+	float RLB=0,RUB=0,ZLB=0,ZUB=0;
+	int j;
+	if(Jpos<self->JB){
+	  for (j=0;j<Jpos;j++){
+	    RLB+=self->DRINP[j];
+	  }
+	  RUB=RLB+self->DRINP[Jpos];
+	  for (j=0;j<Jpos;j++){
+	    ZLB+=self->DZINP[j];
+	  }
+	  ZUB=ZLB+self->DZINP[Jpos];
+	  self->phantomcell[i]=new(PhantomCell,RLB,RUB,ZLB,ZUB);
+	  update(self->phantomcell[i]);
+	}
       }
     }
   }

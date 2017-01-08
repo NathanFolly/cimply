@@ -1,4 +1,6 @@
-PETSC_ARCH = arch-linux-gnu-intel
+PETSC_DIR = /Users/maximilianhartig/petsc/
+PETSC_ARCH = arch-darwin-c-debug
+# arch-linux-gnu-intel
 CFLAGS = 
 FFLAGS =
 CPPFLAGS =

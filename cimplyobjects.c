@@ -22,7 +22,7 @@ void * new(const void * _class, ...){
                                   * equal to &object.class */
   if (class->ctor){
     va_list ap;
-    va_start (ap, class);
+    va_start (ap, _class);
     p = class->ctor(p,&ap);
     va_end(ap);
   }
@@ -60,7 +60,7 @@ void update(void * self){
 
 /* The function getPhantomFractions is defined for interfaces, simmermeshes and phantomcells */
 
-void * getPhantomFractions(void * _self, float ** PhantomFractions){
+void * getPhantomFractions(void * _self, double ** PhantomFractions){
   /* todo: still a bit ugly. might be good idea to define superclass container
    * that has a getPhantomFractions function and the subclasses interface,
    * phantomcell and simmermesh. this will do for now */
@@ -156,9 +156,9 @@ void * assign(void * _self,void * _b){
     return 0;
 }
 
-float phantomfraction(void * _self){
+double phantomfraction(void * _self){
   struct PhantomCell * self = _self;
-  float pfrac=0;
+  double pfrac=0;
   self->givePhantomFraction(self, &pfrac);
 
   return pfrac;
@@ -174,3 +174,39 @@ void * generateTestSphere(void * _self, float radius, int nvertices){
   self->phantommesh->generateTestSphere(self->phantommesh, radius , nvertices);
   return 0;
 }
+
+void * setpressure(void * _self, const double * pressure)
+{
+  const struct Class ** cp = _self;
+  assert (*cp == SimmerAnalysis);
+  struct SimmerAnalysis * self = _self;
+  self->setpressure(self, pressure);
+
+  return 0;
+}
+
+void * getMMS(const void * _self, int * MMS)
+{
+  const struct Class * const * class = _self;
+  if(!(*cp==SimmerAnalysis))
+    {
+      fprintf(stderr,"ERROR:: eror in getMMS. First argument not of type SimmerAnalysis\n");
+      return 0;
+    }
+  const struct SimmerAnalysis * self = _self;
+  self->getMMS(self,MMS);
+}
+
+void * setiteration(void * _self, const int iter)
+{
+  const struct Class ** cp = _self;
+  if(*cp!=FEMAnalysis)
+    {
+      fprintf(stderr,"ERROR:: error in setiteration. first argument not of type FEMAnalysis.\n");
+      return 0;
+    }
+  struct FEMAnalysis * self = _self;
+  self->setiteration(self, iter);
+  return 0;
+}
+  

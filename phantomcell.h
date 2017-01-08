@@ -10,16 +10,16 @@ struct PhantomCell{
   unsigned vertexcount;               /* number of vertices in this phantomcell*/
   PetscReal RLB, RUB, ZLB, ZUB;  /* The cell boundaries (radius upper/lower;
                                   * Zpos upper/lower) */
-  float cellvolume;  /* total volume of the cell */
-  float phantomvolume;     /* total volome of phantom material in this
+  double cellvolume;  /* total volume of the cell */
+  double phantomvolume;     /* total volome of phantom material in this
                                 * cell */
-  float phantomfraction;  /* The volume fraction that is occupied by the
+  double phantomfraction;  /* The volume fraction that is occupied by the
                                * phantom material, ergo not part of the CFD domain */
   struct Node * vertexring;  /* nodes inside the phantomcell */
   struct PhantomCell ** subcell;  /* subcells of the phantom cell */
 
 
-  void (*givePhantomFraction)(void * _self, float*  phantomfraction);  /* function pointer to
+  void (*givePhantomFraction)(void * _self, double*  phantomfraction);  /* function pointer to
                                                         * return the
                                                         * phantom fraction */
   void (* calculatePhantomFraction)(void * _self);                 /* calculate

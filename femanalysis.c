@@ -4,6 +4,8 @@ static void * FEMAnalysis_selectfsinterface(void * _self, const char interfacena
 
 static void * FEMAnalysis_settimestep(void * _self, PetscReal dt);
 
+static void * FEMAnalysis_setiteration(void * _self,const int iter);
+
 static PetscErrorCode SetupProblem(DM dm, AppCtx *user);
 
 static PetscErrorCode SetupDiscretization(DM dm, AppCtx *user);
@@ -44,6 +46,7 @@ static void * FEMAnalysis_ctor(void * _self, va_list * app){
   self->user.time.iter=0;
   self->selectfsinterface = FEMAnalysis_selectfsinterface;
   self->settimestep=FEMAnalysis_settimestep;
+  self->setiteration=FEMAnalysis_setiteration;
   
   meshfilename = va_arg(*app, char *);
   endtime = va_arg(*app, double);
@@ -185,6 +188,13 @@ void * settimestep(void * _self, double dt){
   struct FEMAnalysis * self = _self;
 
   self->settimestep(self,(PetscReal) dt);
+  return 0;
+}
+
+static void * FEMAnalysis_setiteration(void * _self,const int iter)
+{
+  struct FEMAnalysis * self = _self;
+  self->user.time.iter = iter;
   return 0;
 }
 

@@ -17,7 +17,7 @@ struct Interface{
   struct PhantomMesh * phantommesh;        /* the phantommesh associated with this interface */
   
   void * (* assign)(void * _self, void * _b);
-  void * (* getPhantomFractions)(void * _self, float ** PhantomFractions);
+  void * (* getPhantomFractions)(void * _self, double ** PhantomFractions);
   void * (* pull)(void * _self);
   void * (* prepare)(void * _self);
   
